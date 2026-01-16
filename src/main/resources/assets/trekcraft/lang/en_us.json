@@ -1,0 +1,13 @@
+{
+  "itemGroup.trekcraft": "TrekCraft",
+
+  "item.trekcraft.latinum_slip": "Latinum Slip",
+  "item.trekcraft.latinum_strip": "Latinum Strip",
+  "item.trekcraft.tricorder": "Tricorder",
+
+  "block.trekcraft.latinum_bar": "Latinum Bar",
+  "block.trekcraft.transporter_pad": "Transporter Pad",
+  "block.trekcraft.transporter_room": "Transporter Room",
+
+  "container.trekcraft.transporter_room": "Transporter Room"
+}

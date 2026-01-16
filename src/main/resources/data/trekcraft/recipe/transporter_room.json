@@ -1,0 +1,15 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "PPP",
+    " C "
+  ],
+  "key": {
+    "P": {"item": "trekcraft:transporter_pad"},
+    "C": {"item": "minecraft:chest"}
+  },
+  "result": {
+    "id": "trekcraft:transporter_room",
+    "count": 1
+  }
+}

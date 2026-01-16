@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "ICI",
+    "DBD"
+  ],
+  "key": {
+    "I": {"item": "minecraft:iron_ingot"},
+    "C": {"item": "minecraft:copper_ingot"},
+    "D": {"item": "minecraft:diamond"},
+    "B": {"item": "trekcraft:latinum_bar"}
+  },
+  "result": {
+    "id": "trekcraft:transporter_pad",
+    "count": 1
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "SSS",
+    "SSS",
+    "SSS"
+  ],
+  "key": {
+    "S": {"item": "trekcraft:latinum_strip"}
+  },
+  "result": {
+    "id": "trekcraft:latinum_bar",
+    "count": 1
+  }
+}
