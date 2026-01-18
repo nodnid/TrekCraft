@@ -8,7 +8,6 @@ import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.level.Level;
 
 public class ChatUi {
 
@@ -20,28 +19,22 @@ public class ChatUi {
         player.sendSystemMessage(createMenuButton("[Transport -> Pad]", "/trek transport listPads",
                 "View available transporter pads", ChatFormatting.AQUA));
 
-        player.sendSystemMessage(createMenuButton("[Transport -> Player]", "/trek transport listPlayers",
-                "View players with tricorders", ChatFormatting.AQUA));
-
         player.sendSystemMessage(createMenuButton("[Transport -> Signal]", "/trek transport listSignals",
-                "View dropped tricorder signals", ChatFormatting.AQUA));
+                "View tricorder signals (held and dropped)", ChatFormatting.AQUA));
 
         // Scan
         player.sendSystemMessage(createMenuButton("[Scan]", "/trek scan",
                 "Scan for anomalies (costs 1 Latinum Slip)", ChatFormatting.GREEN));
 
-        // Requests
-        player.sendSystemMessage(createMenuButton("[Requests]", "/trek request list",
-                "View pending away team requests", ChatFormatting.YELLOW));
-
         // Fuel status
         if (player.level() instanceof ServerLevel serverLevel) {
             TransporterNetworkSavedData data = TransporterNetworkSavedData.get(serverLevel);
-            if (data.hasTransporterRoom()) {
+            if (data.hasAnyRoom()) {
+                int totalFuel = data.getTotalNetworkFuel();
                 player.sendSystemMessage(Component.literal("Fuel: ")
                         .withStyle(ChatFormatting.GRAY)
-                        .append(Component.literal(data.getCachedFuel() + " strips")
-                                .withStyle(data.getCachedFuel() > 0 ? ChatFormatting.GREEN : ChatFormatting.RED)));
+                        .append(Component.literal(totalFuel + " strips")
+                                .withStyle(totalFuel > 0 ? ChatFormatting.GREEN : ChatFormatting.RED)));
             } else {
                 player.sendSystemMessage(Component.literal("Fuel: ")
                         .withStyle(ChatFormatting.GRAY)

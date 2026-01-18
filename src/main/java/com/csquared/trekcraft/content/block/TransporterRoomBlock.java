@@ -66,33 +66,13 @@ public class TransporterRoomBlock extends BaseEntityBlock {
 
             TransporterNetworkSavedData data = TransporterNetworkSavedData.get(serverLevel);
 
-            // Check one-per-world rule
-            if (data.hasTransporterRoom()) {
-                BlockPos existingPos = data.getTransporterRoomPos();
-                // Check if the existing room is still there
-                if (serverLevel.getBlockEntity(existingPos) instanceof TransporterRoomBlockEntity) {
-                    // Room already exists, deny placement
-                    level.removeBlock(pos, false);
-                    if (placer instanceof Player player) {
-                        if (!player.getAbilities().instabuild) {
-                            player.addItem(stack.copy());
-                        }
-                        player.displayClientMessage(
-                                Component.literal("There is only one Transporter Room per world. Existing room at: " +
-                                        existingPos.getX() + ", " + existingPos.getY() + ", " + existingPos.getZ()), false);
-                    }
-                    return;
-                }
-                // Old room no longer exists, clear it
-                data.clearTransporterRoom();
-            }
+            // Register this room in the network
+            data.registerRoom(pos);
 
-            // Register this as the new transporter room
-            data.setTransporterRoom(pos);
-
+            int roomCount = data.getRooms().size();
             if (placer instanceof Player player) {
                 player.displayClientMessage(
-                        Component.literal("Transporter Room online. Transport system activated."), false);
+                        Component.literal("Transporter Room online. (" + roomCount + " room(s) in network)"), false);
             }
         }
     }
@@ -120,9 +100,7 @@ public class TransporterRoomBlock extends BaseEntityBlock {
 
             if (!level.isClientSide && level instanceof ServerLevel serverLevel) {
                 TransporterNetworkSavedData data = TransporterNetworkSavedData.get(serverLevel);
-                if (data.getTransporterRoomPos() != null && data.getTransporterRoomPos().equals(pos)) {
-                    data.clearTransporterRoom();
-                }
+                data.unregisterRoom(pos);
             }
         }
         super.onRemove(state, level, pos, newState, isMoving);

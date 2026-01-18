@@ -9,24 +9,21 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.saveddata.SavedData;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
 
 public class TransporterNetworkSavedData extends SavedData {
     private static final String DATA_NAME = TrekCraftMod.MODID + "_transporter_network";
 
-    // Transporter Room (global controller)
-    private BlockPos transporterRoomPos = null;
-    private int cachedFuel = 0;
+    // Multiple Transporter Rooms
+    private final Map<BlockPos, RoomRecord> rooms = new HashMap<>();
 
     // Registered pads
     private final Map<BlockPos, PadRecord> pads = new HashMap<>();
 
-    // Dropped tricorder signals
+    // Tricorder signals (both held and dropped)
     private final Map<UUID, SignalRecord> signals = new HashMap<>();
-
-    // Away team requests
-    private final Map<UUID, RequestRecord> requests = new HashMap<>();
 
     public TransporterNetworkSavedData() {
     }
@@ -46,14 +43,30 @@ public class TransporterNetworkSavedData extends SavedData {
     public static TransporterNetworkSavedData load(CompoundTag tag, HolderLookup.Provider registries) {
         TransporterNetworkSavedData data = new TransporterNetworkSavedData();
 
-        // Load transporter room
-        if (tag.contains("RoomPos")) {
-            int[] roomPosArray = tag.getIntArray("RoomPos");
-            if (roomPosArray.length == 3) {
-                data.transporterRoomPos = new BlockPos(roomPosArray[0], roomPosArray[1], roomPosArray[2]);
+        // Load rooms - check for new format first
+        if (tag.contains("Rooms", Tag.TAG_LIST)) {
+            ListTag roomsTag = tag.getList("Rooms", Tag.TAG_COMPOUND);
+            for (int i = 0; i < roomsTag.size(); i++) {
+                CompoundTag roomTag = roomsTag.getCompound(i);
+                int[] posArray = roomTag.getIntArray("Pos");
+                if (posArray.length == 3) {
+                    BlockPos pos = new BlockPos(posArray[0], posArray[1], posArray[2]);
+                    int cachedFuel = roomTag.getInt("CachedFuel");
+                    long registeredTime = roomTag.getLong("RegisteredTime");
+                    data.rooms.put(pos, new RoomRecord(pos, cachedFuel, registeredTime));
+                }
             }
         }
-        data.cachedFuel = tag.getInt("CachedFuel");
+        // Migration: load old single-room format
+        else if (tag.contains("RoomPos")) {
+            int[] roomPosArray = tag.getIntArray("RoomPos");
+            if (roomPosArray.length == 3) {
+                BlockPos pos = new BlockPos(roomPosArray[0], roomPosArray[1], roomPosArray[2]);
+                int cachedFuel = tag.getInt("CachedFuel");
+                data.rooms.put(pos, new RoomRecord(pos, cachedFuel, System.currentTimeMillis()));
+                TrekCraftMod.LOGGER.info("Migrated old single-room format to multi-room format");
+            }
+        }
 
         // Load pads
         ListTag padsTag = tag.getList("Pads", Tag.TAG_COMPOUND);
@@ -68,7 +81,7 @@ public class TransporterNetworkSavedData extends SavedData {
             }
         }
 
-        // Load signals
+        // Load signals - check for new format with signal type
         ListTag signalsTag = tag.getList("Signals", Tag.TAG_COMPOUND);
         for (int i = 0; i < signalsTag.size(); i++) {
             CompoundTag signalTag = signalsTag.getCompound(i);
@@ -77,21 +90,21 @@ public class TransporterNetworkSavedData extends SavedData {
             int[] posArray = signalTag.getIntArray("Pos");
             BlockPos pos = posArray.length == 3 ? new BlockPos(posArray[0], posArray[1], posArray[2]) : BlockPos.ZERO;
             long lastSeen = signalTag.getLong("LastSeen");
-            data.signals.put(tricorderId, new SignalRecord(tricorderId, displayName, pos, lastSeen));
-        }
 
-        // Load requests
-        ListTag requestsTag = tag.getList("Requests", Tag.TAG_COMPOUND);
-        for (int i = 0; i < requestsTag.size(); i++) {
-            CompoundTag reqTag = requestsTag.getCompound(i);
-            UUID requester = reqTag.getUUID("Requester");
-            UUID recipient = reqTag.getUUID("Recipient");
-            int[] posArray = reqTag.getIntArray("AnchorPos");
-            BlockPos anchorPos = posArray.length == 3 ? new BlockPos(posArray[0], posArray[1], posArray[2]) : BlockPos.ZERO;
-            long created = reqTag.getLong("Created");
-            long expires = reqTag.getLong("Expires");
-            RequestStatus status = RequestStatus.valueOf(reqTag.getString("Status"));
-            data.requests.put(recipient, new RequestRecord(requester, recipient, anchorPos, created, expires, status));
+            // New fields
+            SignalType type = SignalType.DROPPED; // Default for migration
+            if (signalTag.contains("Type")) {
+                try {
+                    type = SignalType.valueOf(signalTag.getString("Type"));
+                } catch (IllegalArgumentException ignored) {}
+            }
+
+            UUID holderId = null;
+            if (signalTag.contains("HolderId")) {
+                holderId = signalTag.getUUID("HolderId");
+            }
+
+            data.signals.put(tricorderId, new SignalRecord(tricorderId, displayName, pos, lastSeen, type, holderId));
         }
 
         return data;
@@ -99,15 +112,16 @@ public class TransporterNetworkSavedData extends SavedData {
 
     @Override
     public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries) {
-        // Save transporter room
-        if (transporterRoomPos != null) {
-            tag.putIntArray("RoomPos", new int[]{
-                    transporterRoomPos.getX(),
-                    transporterRoomPos.getY(),
-                    transporterRoomPos.getZ()
-            });
+        // Save rooms
+        ListTag roomsTag = new ListTag();
+        for (RoomRecord room : rooms.values()) {
+            CompoundTag roomTag = new CompoundTag();
+            roomTag.putIntArray("Pos", new int[]{room.pos().getX(), room.pos().getY(), room.pos().getZ()});
+            roomTag.putInt("CachedFuel", room.cachedFuel());
+            roomTag.putLong("RegisteredTime", room.registeredTime());
+            roomsTag.add(roomTag);
         }
-        tag.putInt("CachedFuel", cachedFuel);
+        tag.put("Rooms", roomsTag);
 
         // Save pads
         ListTag padsTag = new ListTag();
@@ -132,71 +146,94 @@ public class TransporterNetworkSavedData extends SavedData {
                     signal.lastKnownPos().getZ()
             });
             signalTag.putLong("LastSeen", signal.lastSeenGameTime());
+            signalTag.putString("Type", signal.type().name());
+            if (signal.holderId() != null) {
+                signalTag.putUUID("HolderId", signal.holderId());
+            }
             signalsTag.add(signalTag);
         }
         tag.put("Signals", signalsTag);
 
-        // Save requests
-        ListTag requestsTag = new ListTag();
-        for (RequestRecord req : requests.values()) {
-            CompoundTag reqTag = new CompoundTag();
-            reqTag.putUUID("Requester", req.requester());
-            reqTag.putUUID("Recipient", req.recipient());
-            reqTag.putIntArray("AnchorPos", new int[]{
-                    req.requesterAnchorPos().getX(),
-                    req.requesterAnchorPos().getY(),
-                    req.requesterAnchorPos().getZ()
-            });
-            reqTag.putLong("Created", req.createdGameTime());
-            reqTag.putLong("Expires", req.expiresGameTime());
-            reqTag.putString("Status", req.status().name());
-            requestsTag.add(reqTag);
-        }
-        tag.put("Requests", requestsTag);
-
         return tag;
     }
 
-    // Transporter Room methods
-    public boolean hasTransporterRoom() {
-        return transporterRoomPos != null;
-    }
+    // ===== Room methods =====
 
-    public BlockPos getTransporterRoomPos() {
-        return transporterRoomPos;
-    }
-
-    public void setTransporterRoom(BlockPos pos) {
-        this.transporterRoomPos = pos;
-        this.cachedFuel = 0; // Will be updated by block entity
+    public void registerRoom(BlockPos pos) {
+        rooms.put(pos, new RoomRecord(pos, 0, System.currentTimeMillis()));
         setDirty();
     }
 
-    public void clearTransporterRoom() {
-        this.transporterRoomPos = null;
-        this.cachedFuel = 0;
+    public void unregisterRoom(BlockPos pos) {
+        rooms.remove(pos);
         setDirty();
     }
 
-    public int getCachedFuel() {
-        return cachedFuel;
+    public boolean hasAnyRoom() {
+        return !rooms.isEmpty();
     }
 
-    public void setCachedFuel(int fuel) {
-        this.cachedFuel = fuel;
-        setDirty();
+    public Map<BlockPos, RoomRecord> getRooms() {
+        return Collections.unmodifiableMap(rooms);
     }
 
-    public boolean consumeFuel(int amount) {
-        if (cachedFuel >= amount) {
-            cachedFuel -= amount;
+    public Optional<RoomRecord> getRoom(BlockPos pos) {
+        return Optional.ofNullable(rooms.get(pos));
+    }
+
+    /**
+     * Find the nearest room within the given range.
+     * @param playerPos The player's current position
+     * @param maxRange Maximum distance to search
+     * @return The nearest room within range, or empty if none found
+     */
+    public Optional<RoomRecord> getNearestRoom(BlockPos playerPos, double maxRange) {
+        RoomRecord nearest = null;
+        double nearestDistSq = Double.MAX_VALUE;
+
+        for (RoomRecord room : rooms.values()) {
+            double distSq = playerPos.distSqr(room.pos());
+            if (distSq <= maxRange * maxRange && distSq < nearestDistSq) {
+                nearestDistSq = distSq;
+                nearest = room;
+            }
+        }
+
+        return Optional.ofNullable(nearest);
+    }
+
+    /**
+     * Get the total fuel across all rooms in the network.
+     */
+    public int getTotalNetworkFuel() {
+        return rooms.values().stream().mapToInt(RoomRecord::cachedFuel).sum();
+    }
+
+    public int getRoomFuel(BlockPos roomPos) {
+        RoomRecord room = rooms.get(roomPos);
+        return room != null ? room.cachedFuel() : 0;
+    }
+
+    public void setRoomFuel(BlockPos roomPos, int fuel) {
+        RoomRecord room = rooms.get(roomPos);
+        if (room != null) {
+            rooms.put(roomPos, new RoomRecord(room.pos(), fuel, room.registeredTime()));
+            setDirty();
+        }
+    }
+
+    public boolean consumeRoomFuel(BlockPos roomPos, int amount) {
+        RoomRecord room = rooms.get(roomPos);
+        if (room != null && room.cachedFuel() >= amount) {
+            rooms.put(roomPos, new RoomRecord(room.pos(), room.cachedFuel() - amount, room.registeredTime()));
             setDirty();
             return true;
         }
         return false;
     }
 
-    // Pad methods
+    // ===== Pad methods =====
+
     public void registerPad(BlockPos pos, String name) {
         pads.put(pos, new PadRecord(pos, name, System.currentTimeMillis()));
         setDirty();
@@ -215,10 +252,40 @@ public class TransporterNetworkSavedData extends SavedData {
         return Optional.ofNullable(pads.get(pos));
     }
 
-    // Signal methods
-    public void registerSignal(UUID tricorderId, String displayName, BlockPos pos, long gameTime) {
-        signals.put(tricorderId, new SignalRecord(tricorderId, displayName, pos, gameTime));
+    // ===== Signal methods =====
+
+    /**
+     * Register a dropped tricorder signal.
+     */
+    public void registerDroppedSignal(UUID tricorderId, String displayName, BlockPos pos, long gameTime) {
+        signals.put(tricorderId, new SignalRecord(tricorderId, displayName, pos, gameTime, SignalType.DROPPED, null));
         setDirty();
+    }
+
+    /**
+     * Register a held tricorder signal (in player inventory).
+     */
+    public void registerHeldSignal(UUID tricorderId, String displayName, BlockPos pos, long gameTime, UUID holderId) {
+        signals.put(tricorderId, new SignalRecord(tricorderId, displayName, pos, gameTime, SignalType.HELD, holderId));
+        setDirty();
+    }
+
+    /**
+     * Update signal position (for tracking held tricorders).
+     */
+    public void updateSignalPosition(UUID tricorderId, BlockPos pos, long gameTime) {
+        SignalRecord existing = signals.get(tricorderId);
+        if (existing != null) {
+            signals.put(tricorderId, new SignalRecord(
+                    existing.tricorderId(),
+                    existing.displayName(),
+                    pos,
+                    gameTime,
+                    existing.type(),
+                    existing.holderId()
+            ));
+            setDirty();
+        }
     }
 
     public void unregisterSignal(UUID tricorderId) {
@@ -234,49 +301,23 @@ public class TransporterNetworkSavedData extends SavedData {
         return Optional.ofNullable(signals.get(tricorderId));
     }
 
-    // Request methods
-    public void addRequest(RequestRecord request) {
-        requests.put(request.recipient(), request);
-        setDirty();
-    }
+    // ===== Record types =====
 
-    public void removeRequest(UUID recipientId) {
-        requests.remove(recipientId);
-        setDirty();
-    }
+    public record RoomRecord(BlockPos pos, int cachedFuel, long registeredTime) {}
 
-    public Optional<RequestRecord> getRequestForRecipient(UUID recipientId) {
-        return Optional.ofNullable(requests.get(recipientId));
-    }
-
-    public Map<UUID, RequestRecord> getRequests() {
-        return Collections.unmodifiableMap(requests);
-    }
-
-    // Record types
     public record PadRecord(BlockPos pos, String name, long createdGameTime) {}
 
-    public record SignalRecord(UUID tricorderId, String displayName, BlockPos lastKnownPos, long lastSeenGameTime) {}
+    public record SignalRecord(
+            UUID tricorderId,
+            String displayName,
+            BlockPos lastKnownPos,
+            long lastSeenGameTime,
+            SignalType type,
+            @Nullable UUID holderId
+    ) {}
 
-    public record RequestRecord(
-            UUID requester,
-            UUID recipient,
-            BlockPos requesterAnchorPos,
-            long createdGameTime,
-            long expiresGameTime,
-            RequestStatus status
-    ) {
-        public RequestRecord withStatus(RequestStatus newStatus) {
-            return new RequestRecord(requester, recipient, requesterAnchorPos, createdGameTime, expiresGameTime, newStatus);
-        }
-
-        public RequestRecord extendExpiration(long newExpires) {
-            return new RequestRecord(requester, recipient, requesterAnchorPos, createdGameTime, newExpires, status);
-        }
-    }
-
-    public enum RequestStatus {
-        PENDING,
+    public enum SignalType {
+        DROPPED,
         HELD
     }
 }

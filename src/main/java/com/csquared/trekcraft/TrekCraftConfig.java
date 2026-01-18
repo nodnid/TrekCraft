@@ -34,6 +34,18 @@ public class TrekCraftConfig {
             .comment("Vertical range to search for safe landing spot")
             .defineInRange("transport.safeSearchVertical", 3, 1, 16);
 
+    private static final ModConfigSpec.IntValue TRANSPORT_BASE_RANGE = BUILDER
+            .comment("Base range in blocks for transport to players/signals")
+            .defineInRange("transport.baseRange", 500, 100, 10000);
+
+    private static final ModConfigSpec.IntValue TRANSPORT_PAD_RANGE = BUILDER
+            .comment("Range in blocks for transport to pads (should be higher than base)")
+            .defineInRange("transport.padRange", 1000, 100, 20000);
+
+    private static final ModConfigSpec.BooleanValue TRACK_HELD_TRICORDERS = BUILDER
+            .comment("Track tricorders in player inventory as signals")
+            .define("transport.trackHeldTricorders", true);
+
     // Scan settings
     private static final ModConfigSpec.IntValue SCAN_COST = BUILDER
             .comment("Number of Latinum Slips consumed per scan")
@@ -46,19 +58,6 @@ public class TrekCraftConfig {
     private static final ModConfigSpec.IntValue SCAN_RANGE = BUILDER
             .comment("Scan range in blocks (creates a cube of this size)")
             .defineInRange("scan.range", 10, 5, 32);
-
-    // Request settings
-    private static final ModConfigSpec.IntValue REQUEST_TIMEOUT = BUILDER
-            .comment("Request timeout in ticks (20 ticks = 1 second)")
-            .defineInRange("request.timeoutTicks", 200, 20, 6000);
-
-    private static final ModConfigSpec.BooleanValue ALLOW_HOLD = BUILDER
-            .comment("Allow players to hold requests for later")
-            .define("request.allowHold", true);
-
-    private static final ModConfigSpec.IntValue HELD_TIMEOUT = BUILDER
-            .comment("Held request timeout in ticks")
-            .defineInRange("request.heldTimeoutTicks", 6000, 200, 72000);
 
     // Creative bypass
     private static final ModConfigSpec.BooleanValue CREATIVE_BYPASS_FUEL = BUILDER
@@ -78,12 +77,12 @@ public class TrekCraftConfig {
     public static int teleportCost;
     public static int safeSearchRadius;
     public static int safeSearchVertical;
+    public static int transportBaseRange;
+    public static int transportPadRange;
+    public static boolean trackHeldTricorders;
     public static int scanCost;
     public static int scanCooldownTicks;
     public static int scanRange;
-    public static int requestTimeoutTicks;
-    public static boolean allowHold;
-    public static int heldTimeoutTicks;
     public static boolean creativeBypassFuel;
     public static boolean creativeBypassScanCost;
 
@@ -95,12 +94,12 @@ public class TrekCraftConfig {
         teleportCost = TELEPORT_COST.get();
         safeSearchRadius = SAFE_SEARCH_RADIUS.get();
         safeSearchVertical = SAFE_SEARCH_VERTICAL.get();
+        transportBaseRange = TRANSPORT_BASE_RANGE.get();
+        transportPadRange = TRANSPORT_PAD_RANGE.get();
+        trackHeldTricorders = TRACK_HELD_TRICORDERS.get();
         scanCost = SCAN_COST.get();
         scanCooldownTicks = SCAN_COOLDOWN.get();
         scanRange = SCAN_RANGE.get();
-        requestTimeoutTicks = REQUEST_TIMEOUT.get();
-        allowHold = ALLOW_HOLD.get();
-        heldTimeoutTicks = HELD_TIMEOUT.get();
         creativeBypassFuel = CREATIVE_BYPASS_FUEL.get();
         creativeBypassScanCost = CREATIVE_BYPASS_SCAN_COST.get();
     }

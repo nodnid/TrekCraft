@@ -51,7 +51,7 @@ public class TransporterRoomBlockEntity extends BaseContainerBlockEntity impleme
 
     private void reconcileFuel(ServerLevel serverLevel) {
         TransporterNetworkSavedData data = TransporterNetworkSavedData.get(serverLevel);
-        int cachedFuel = data.getCachedFuel();
+        int cachedFuel = data.getRoomFuel(this.worldPosition);
         int actualFuel = countStrips();
 
         // If cached fuel is less than actual (teleports happened while unloaded),
@@ -63,13 +63,13 @@ public class TransporterRoomBlockEntity extends BaseContainerBlockEntity impleme
         // If cached fuel is more than actual (shouldn't happen normally),
         // trust the inventory and update cache
         else if (cachedFuel > actualFuel) {
-            data.setCachedFuel(actualFuel);
+            data.setRoomFuel(this.worldPosition, actualFuel);
         }
     }
 
     private void updateCachedFuel(ServerLevel serverLevel) {
         TransporterNetworkSavedData data = TransporterNetworkSavedData.get(serverLevel);
-        data.setCachedFuel(countStrips());
+        data.setRoomFuel(this.worldPosition, countStrips());
     }
 
     public int countStrips() {

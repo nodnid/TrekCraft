@@ -9,5 +9,6 @@
   "block.trekcraft.transporter_pad": "Transporter Pad",
   "block.trekcraft.transporter_room": "Transporter Room",
 
-  "container.trekcraft.transporter_room": "Transporter Room"
+  "container.trekcraft.transporter_room": "Transporter Room",
+  "screen.trekcraft.tricorder": "Tricorder"
 }

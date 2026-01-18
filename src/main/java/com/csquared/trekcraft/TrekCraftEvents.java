@@ -6,8 +6,8 @@ import com.csquared.trekcraft.data.TransporterNetworkSavedData;
 import com.csquared.trekcraft.data.TricorderData;
 import com.csquared.trekcraft.registry.ModDataComponents;
 import com.csquared.trekcraft.registry.ModItems;
-import com.csquared.trekcraft.service.RequestService;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
@@ -16,7 +16,11 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.EntityLeaveLevelEvent;
-import net.neoforged.neoforge.event.tick.ServerTickEvent;
+import net.neoforged.neoforge.event.tick.PlayerTickEvent;
+
+import java.util.HashSet;
+import java.util.Set;
+import java.util.UUID;
 
 @EventBusSubscriber(modid = TrekCraftMod.MODID)
 public class TrekCraftEvents {
@@ -27,9 +31,63 @@ public class TrekCraftEvents {
     }
 
     @SubscribeEvent
-    public static void onServerTick(ServerTickEvent.Post event) {
-        // Tick request timeouts
-        RequestService.tickRequests(event.getServer());
+    public static void onPlayerTick(PlayerTickEvent.Post event) {
+        // Track held tricorders as signals
+        if (!TrekCraftConfig.trackHeldTricorders) return;
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        if (player.level().isClientSide()) return;
+        if (!player.level().dimension().equals(Level.OVERWORLD)) return;
+
+        // Only check every 20 ticks (1 second)
+        if (player.tickCount % 20 != 0) return;
+
+        ServerLevel serverLevel = (ServerLevel) player.level();
+        TransporterNetworkSavedData data = TransporterNetworkSavedData.get(serverLevel);
+        long gameTime = serverLevel.getGameTime();
+
+        // Find all tricorders in player's inventory
+        Set<UUID> currentTricorders = new HashSet<>();
+        for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+            ItemStack stack = player.getInventory().getItem(i);
+            if (stack.is(ModItems.TRICORDER.get())) {
+                TricorderItem.ensureTricorderData(stack);
+                TricorderData tricorderData = stack.get(ModDataComponents.TRICORDER_DATA.get());
+                if (tricorderData != null) {
+                    UUID tricorderId = tricorderData.tricorderId();
+                    currentTricorders.add(tricorderId);
+
+                    // Check if this signal exists
+                    var existingSignal = data.getSignal(tricorderId);
+                    if (existingSignal.isPresent()) {
+                        // Update position if it's a held signal for this player
+                        var signal = existingSignal.get();
+                        if (signal.type() == TransporterNetworkSavedData.SignalType.HELD &&
+                                player.getUUID().equals(signal.holderId())) {
+                            data.updateSignalPosition(tricorderId, player.blockPosition(), gameTime);
+                        }
+                        // If it was a dropped signal, convert to held
+                        else if (signal.type() == TransporterNetworkSavedData.SignalType.DROPPED) {
+                            data.registerHeldSignal(tricorderId, tricorderData.getDisplayName(),
+                                    player.blockPosition(), gameTime, player.getUUID());
+                        }
+                    } else {
+                        // Register new held signal
+                        data.registerHeldSignal(tricorderId, tricorderData.getDisplayName(),
+                                player.blockPosition(), gameTime, player.getUUID());
+                    }
+                }
+            }
+        }
+
+        // Remove held signals for tricorders no longer in this player's inventory
+        for (var entry : data.getSignals().entrySet()) {
+            var signal = entry.getValue();
+            if (signal.type() == TransporterNetworkSavedData.SignalType.HELD &&
+                    player.getUUID().equals(signal.holderId()) &&
+                    !currentTricorders.contains(signal.tricorderId())) {
+                data.unregisterSignal(signal.tricorderId());
+            }
+        }
     }
 
     @SubscribeEvent
@@ -43,8 +101,8 @@ public class TrekCraftEvents {
 
         // Ensure it has data
         TricorderItem.ensureTricorderData(stack);
-        TricorderData data = stack.get(ModDataComponents.TRICORDER_DATA.get());
-        if (data == null) return;
+        TricorderData tricorderData = stack.get(ModDataComponents.TRICORDER_DATA.get());
+        if (tricorderData == null) return;
 
         // Only register in Overworld
         if (!event.getLevel().dimension().equals(Level.OVERWORLD)) return;
@@ -52,15 +110,15 @@ public class TrekCraftEvents {
         ServerLevel serverLevel = (ServerLevel) event.getLevel();
         TransporterNetworkSavedData networkData = TransporterNetworkSavedData.get(serverLevel);
 
-        networkData.registerSignal(
-                data.tricorderId(),
-                data.getDisplayName(),
+        networkData.registerDroppedSignal(
+                tricorderData.tricorderId(),
+                tricorderData.getDisplayName(),
                 itemEntity.blockPosition(),
                 serverLevel.getGameTime()
         );
 
-        TrekCraftMod.LOGGER.debug("Registered tricorder signal: {} at {}",
-                data.getDisplayName(), itemEntity.blockPosition());
+        TrekCraftMod.LOGGER.debug("Registered dropped tricorder signal: {} at {}",
+                tricorderData.getDisplayName(), itemEntity.blockPosition());
     }
 
     @SubscribeEvent
@@ -72,16 +130,19 @@ public class TrekCraftEvents {
         ItemStack stack = itemEntity.getItem();
         if (!stack.is(ModItems.TRICORDER.get())) return;
 
-        TricorderData data = stack.get(ModDataComponents.TRICORDER_DATA.get());
-        if (data == null) return;
+        TricorderData tricorderData = stack.get(ModDataComponents.TRICORDER_DATA.get());
+        if (tricorderData == null) return;
 
         if (!event.getLevel().dimension().equals(Level.OVERWORLD)) return;
 
         ServerLevel serverLevel = (ServerLevel) event.getLevel();
         TransporterNetworkSavedData networkData = TransporterNetworkSavedData.get(serverLevel);
 
-        networkData.unregisterSignal(data.tricorderId());
-
-        TrekCraftMod.LOGGER.debug("Unregistered tricorder signal: {}", data.getDisplayName());
+        // Only unregister if it's a DROPPED signal (HELD signals are managed by player tick)
+        var signal = networkData.getSignal(tricorderData.tricorderId());
+        if (signal.isPresent() && signal.get().type() == TransporterNetworkSavedData.SignalType.DROPPED) {
+            networkData.unregisterSignal(tricorderData.tricorderId());
+            TrekCraftMod.LOGGER.debug("Unregistered dropped tricorder signal: {}", tricorderData.getDisplayName());
+        }
     }
 }
