@@ -2,6 +2,7 @@ package com.csquared.trekcraft.client;
 
 import com.csquared.trekcraft.client.screen.TricorderScreen;
 import com.csquared.trekcraft.network.OpenTricorderScreenPayload;
+import com.csquared.trekcraft.network.ScanResultPayload;
 import net.minecraft.client.Minecraft;
 
 public class ClientPayloadHandler {
@@ -15,6 +16,15 @@ public class ClientPayloadHandler {
                             payload.pads(),
                             payload.signals()
                     )
+            );
+        });
+    }
+
+    public static void handleScanResult(ScanResultPayload payload) {
+        Minecraft.getInstance().execute(() -> {
+            // Open TricorderScreen in scan results mode
+            Minecraft.getInstance().setScreen(
+                    TricorderScreen.createForScanResults(payload.facing(), payload.blocks())
             );
         });
     }

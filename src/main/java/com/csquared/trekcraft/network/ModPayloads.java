@@ -25,6 +25,16 @@ public class ModPayloads {
                     }
                 }
         );
+
+        registrar.playToClient(
+                ScanResultPayload.TYPE,
+                ScanResultPayload.STREAM_CODEC,
+                (payload, context) -> {
+                    if (FMLEnvironment.dist == Dist.CLIENT) {
+                        handleScanResultOnClient(payload);
+                    }
+                }
+        );
     }
 
     // This method uses a fully qualified class name string to defer class loading
@@ -34,6 +44,15 @@ public class ModPayloads {
             handlerClass.getMethod("openScreen", OpenTricorderScreenPayload.class).invoke(null, payload);
         } catch (Exception e) {
             TrekCraftMod.LOGGER.error("Failed to open tricorder screen", e);
+        }
+    }
+
+    private static void handleScanResultOnClient(ScanResultPayload payload) {
+        try {
+            Class<?> handlerClass = Class.forName("com.csquared.trekcraft.client.ClientPayloadHandler");
+            handlerClass.getMethod("handleScanResult", ScanResultPayload.class).invoke(null, payload);
+        } catch (Exception e) {
+            TrekCraftMod.LOGGER.error("Failed to handle scan result", e);
         }
     }
 }

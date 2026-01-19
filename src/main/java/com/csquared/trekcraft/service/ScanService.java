@@ -1,26 +1,23 @@
 package com.csquared.trekcraft.service;
 
 import com.csquared.trekcraft.TrekCraftMod;
+import com.csquared.trekcraft.network.ScanResultPayload;
 import com.csquared.trekcraft.registry.ModItems;
-import com.csquared.trekcraft.util.ChatUi;
-import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.Container;
-import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.phys.AABB;
+import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.*;
 
@@ -90,26 +87,8 @@ public class ScanService {
         BlockPos minPos = scanBounds[0];
         BlockPos maxPos = scanBounds[1];
 
-        // Quadrant definitions relative to facing
-        // Near = first 5 blocks, Far = last 5 blocks
-        // Left/Right based on facing direction
-
-        Map<String, List<String>> quadrantFindings = new LinkedHashMap<>();
-        quadrantFindings.put("Gamma (Far-Left)", new ArrayList<>());
-        quadrantFindings.put("Delta (Far-Right)", new ArrayList<>());
-        quadrantFindings.put("Alpha (Near-Left)", new ArrayList<>());
-        quadrantFindings.put("Beta (Near-Right)", new ArrayList<>());
-
-        // Scan blocks
-        Map<String, Map<String, Integer>> quadrantOres = new HashMap<>();
-        Map<String, Integer> quadrantContainers = new HashMap<>();
-        Map<String, Integer> quadrantSpawners = new HashMap<>();
-
-        for (String quad : quadrantFindings.keySet()) {
-            quadrantOres.put(quad, new HashMap<>());
-            quadrantContainers.put(quad, 0);
-            quadrantSpawners.put(quad, 0);
-        }
+        // Collect interesting blocks with relative coordinates
+        List<ScanResultPayload.ScannedBlock> interestingBlocks = new ArrayList<>();
 
         for (int x = minPos.getX(); x <= maxPos.getX(); x++) {
             for (int y = minPos.getY(); y <= maxPos.getY(); y++) {
@@ -117,102 +96,39 @@ public class ScanService {
                     BlockPos checkPos = new BlockPos(x, y, z);
                     BlockState state = level.getBlockState(checkPos);
 
-                    String quadrant = getQuadrant(playerPos, checkPos, facing);
+                    // Check if block is interesting (ore, spawner, or container)
+                    boolean isInteresting = false;
+                    String blockId = null;
 
-                    // Check for ores
                     if (state.is(SCAN_ORES) || isCommonOre(state)) {
-                        String oreName = getBlockDisplayName(state);
-                        quadrantOres.get(quadrant).merge(oreName, 1, Integer::sum);
+                        isInteresting = true;
+                        blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+                    } else if (state.is(Blocks.SPAWNER)) {
+                        isInteresting = true;
+                        blockId = "minecraft:spawner";
+                    } else {
+                        BlockEntity be = level.getBlockEntity(checkPos);
+                        if (be instanceof Container) {
+                            isInteresting = true;
+                            blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+                        }
                     }
 
-                    // Check for containers
-                    BlockEntity be = level.getBlockEntity(checkPos);
-                    if (be instanceof Container) {
-                        quadrantContainers.merge(quadrant, 1, Integer::sum);
-                    }
+                    if (isInteresting && blockId != null) {
+                        // Calculate relative position (0-9 in each dimension)
+                        int relX = x - minPos.getX();
+                        int relY = y - minPos.getY();
+                        int relZ = z - minPos.getZ();
 
-                    // Check for spawners
-                    if (state.is(Blocks.SPAWNER)) {
-                        quadrantSpawners.merge(quadrant, 1, Integer::sum);
+                        interestingBlocks.add(new ScanResultPayload.ScannedBlock(relX, relY, relZ, blockId));
                     }
                 }
             }
         }
 
-        // Scan for entities
-        AABB scanBox = new AABB(
-                minPos.getX(), minPos.getY(), minPos.getZ(),
-                maxPos.getX() + 1, maxPos.getY() + 1, maxPos.getZ() + 1
-        );
-        Map<String, Integer> quadrantPlayers = new HashMap<>();
-        Map<String, Integer> quadrantMobs = new HashMap<>();
-
-        for (String quad : quadrantFindings.keySet()) {
-            quadrantPlayers.put(quad, 0);
-            quadrantMobs.put(quad, 0);
-        }
-
-        List<LivingEntity> entities = level.getEntitiesOfClass(LivingEntity.class, scanBox);
-        for (LivingEntity entity : entities) {
-            if (entity == player) continue;
-
-            String quadrant = getQuadrant(playerPos, entity.blockPosition(), facing);
-            if (entity instanceof Player) {
-                quadrantPlayers.merge(quadrant, 1, Integer::sum);
-            } else {
-                quadrantMobs.merge(quadrant, 1, Integer::sum);
-            }
-        }
-
-        // Build findings strings
-        for (String quad : quadrantFindings.keySet()) {
-            List<String> findings = quadrantFindings.get(quad);
-
-            // Ores
-            Map<String, Integer> ores = quadrantOres.get(quad);
-            for (Map.Entry<String, Integer> entry : ores.entrySet()) {
-                findings.add(entry.getValue() + "x " + entry.getKey());
-            }
-
-            // Containers
-            int containers = quadrantContainers.get(quad);
-            if (containers > 0) {
-                findings.add(containers + " container" + (containers > 1 ? "s" : ""));
-            }
-
-            // Spawners
-            int spawners = quadrantSpawners.get(quad);
-            if (spawners > 0) {
-                findings.add(spawners + " spawner" + (spawners > 1 ? "s" : ""));
-            }
-
-            // Players
-            int players = quadrantPlayers.get(quad);
-            if (players > 0) {
-                findings.add(players + " player" + (players > 1 ? "s" : ""));
-            }
-
-            // Mobs
-            int mobs = quadrantMobs.get(quad);
-            if (mobs > 0) {
-                findings.add(mobs + " mob" + (mobs > 1 ? "s" : ""));
-            }
-        }
-
-        // Display results
-        player.sendSystemMessage(Component.literal(""));
-        player.sendSystemMessage(Component.literal("=== TRICORDER SCAN ===").withStyle(ChatFormatting.AQUA, ChatFormatting.BOLD));
-        player.sendSystemMessage(Component.literal("Scanning " + SCAN_RANGE + "x" + SCAN_RANGE + "x" + SCAN_RANGE +
-                " area (" + facing.getName().toUpperCase() + ")").withStyle(ChatFormatting.GRAY));
-        player.sendSystemMessage(Component.literal(""));
-
-        for (Map.Entry<String, List<String>> entry : quadrantFindings.entrySet()) {
-            String findings = entry.getValue().isEmpty() ? "No anomalies" : String.join(", ", entry.getValue());
-            ChatUi.sendScanResult(player, entry.getKey(), findings);
-        }
-
-        player.sendSystemMessage(Component.literal(""));
-        player.sendSystemMessage(Component.literal("=====================").withStyle(ChatFormatting.AQUA));
+        // Send scan results to client
+        ScanResultPayload payload = new ScanResultPayload(facing.getName().toUpperCase(), interestingBlocks);
+        PacketDistributor.sendToPlayer(player, payload);
     }
 
     private static BlockPos[] calculateScanBounds(BlockPos playerPos, Direction facing) {
