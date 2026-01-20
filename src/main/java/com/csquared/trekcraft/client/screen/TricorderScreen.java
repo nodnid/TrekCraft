@@ -718,13 +718,33 @@ public class TricorderScreen extends Screen {
         // Player's feet are at relY=5 (middle of scan), which is Y=0.5 in centered coords
         // Player is 1 block behind the scan area's near edge (Z = -5.5 in centered coords)
         if (mc.player != null) {
+            float playerX = 0f;
+            float playerFeetY = 0.5f;
+            float playerZ = -5.5f;
+
+            // Draw line of sight indicator (3 blocks extending from eye level into scan area)
+            float eyeHeight = 1.6f;
+            int losColor = 0xFFFFAA00;  // Orange color for line of sight
+            draw3DLine(g, poseStack, playerX, playerFeetY + eyeHeight, playerZ,
+                                     playerX, playerFeetY + eyeHeight, playerZ + 3.0f, losColor);
+
             poseStack.pushPose();
-            // Position: center X, feet at Y=0.5 (layer 5), behind scan area at Z=-5.5
-            // Add +1 offset to align entity feet with block tops
-            poseStack.translate(0, 0.5f + 1.0f, -5.5f);
-            // Flip entity for GUI display - 180° Z rotation is standard Minecraft approach
-            // Combined with scene's -Y scale, this results in right-side-up entity
+            poseStack.translate(playerX, playerFeetY, playerZ);
+            // Undo scene's -Y scale and apply standard GUI entity transforms
+            // scale(1, -1, -1) undoes Y flip and flips Z for GUI rendering
+            // 180° Z rotation completes the GUI entity flip
+            poseStack.scale(1.0f, -1.0f, -1.0f);
             poseStack.mulPose(Axis.ZP.rotationDegrees(180.0F));
+            // Make player face into scan area (+Z direction)
+            // Compensate for coordinate normalization based on scan direction
+            float playerYRotation = switch (scanFacing) {
+                case "SOUTH" -> 180.0F;
+                case "NORTH" -> 0.0F;
+                case "EAST" -> 90.0F;
+                case "WEST" -> -90.0F;
+                default -> 180.0F;
+            };
+            poseStack.mulPose(Axis.YP.rotationDegrees(playerYRotation));
 
             entityRenderer.render(mc.player, 0, 0, 0, 0, 1.0f, poseStack, bufferSource, LightTexture.FULL_BRIGHT);
             bufferSource.endBatch();
@@ -760,13 +780,14 @@ public class TricorderScreen extends Screen {
                         float ez = transformed[2] - 4.5f;
 
                         poseStack.pushPose();
-                        // Position entity in scene - add +1 offset to align feet with block tops
-                        poseStack.translate(ex, ey + 1.0f, ez);
+                        // Position entity in scene
+                        poseStack.translate(ex, ey, ez);
 
-                        // Flip entity for GUI display - 180° Z rotation is standard Minecraft approach
+                        // Undo scene's -Y scale and apply standard GUI entity transforms
+                        poseStack.scale(1.0f, -1.0f, -1.0f);
                         poseStack.mulPose(Axis.ZP.rotationDegrees(180.0F));
-                        // Apply entity's yaw rotation (negated because of the Z flip)
-                        poseStack.mulPose(Axis.YP.rotationDegrees(-scannedEntity.yaw()));
+                        // Apply entity's yaw rotation
+                        poseStack.mulPose(Axis.YP.rotationDegrees(scannedEntity.yaw()));
 
                         entityRenderer.render(entity, 0, 0, 0, 0, 1.0f, poseStack, bufferSource, LightTexture.FULL_BRIGHT);
                         bufferSource.endBatch();
