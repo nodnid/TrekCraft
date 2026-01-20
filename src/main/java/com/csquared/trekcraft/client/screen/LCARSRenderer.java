@@ -372,4 +372,56 @@ public class LCARSRenderer {
     public static int getBottomBarHeight() {
         return BOTTOM_BAR_HEIGHT;
     }
+
+    /**
+     * Get the top bar bounds for placing elements in the yellow top bar.
+     * Returns bounds appropriate for the current rendering mode.
+     *
+     * @return int array: [x, y, width, height] of top bar area (content area, excluding sidebar)
+     */
+    public static int[] getTopBarBounds(int frameX, int frameY, int frameW, int frameH) {
+        if (useTexture) {
+            float scaleX = (float) frameW / TEXTURE_WIDTH;
+            float scaleY = (float) frameH / TEXTURE_HEIGHT;
+
+            int barX = frameX + (int) (TEX_SIDEBAR_WIDTH * scaleX);
+            int barY = frameY;
+            int barW = frameW - (int) (TEX_SIDEBAR_WIDTH * scaleX);
+            int barH = (int) (TEX_TOP_BAR_HEIGHT * scaleY);
+
+            return new int[]{barX, barY, barW, barH};
+        } else {
+            int barX = frameX + SIDEBAR_WIDTH;
+            int barY = frameY;
+            int barW = frameW - SIDEBAR_WIDTH;
+            int barH = TOP_BAR_HEIGHT;
+            return new int[]{barX, barY, barW, barH};
+        }
+    }
+
+    /**
+     * Get the bottom bar bounds for placing elements in the blue bottom bar.
+     * Returns bounds appropriate for the current rendering mode.
+     *
+     * @return int array: [x, y, width, height] of bottom bar area (content area, excluding sidebar)
+     */
+    public static int[] getBottomBarBounds(int frameX, int frameY, int frameW, int frameH) {
+        if (useTexture) {
+            float scaleX = (float) frameW / TEXTURE_WIDTH;
+            float scaleY = (float) frameH / TEXTURE_HEIGHT;
+
+            int barX = frameX + (int) (TEX_SIDEBAR_WIDTH * scaleX);
+            int barY = frameY + frameH - (int) (TEX_BOTTOM_BAR_HEIGHT * scaleY);
+            int barW = frameW - (int) (TEX_SIDEBAR_WIDTH * scaleX);
+            int barH = (int) (TEX_BOTTOM_BAR_HEIGHT * scaleY);
+
+            return new int[]{barX, barY, barW, barH};
+        } else {
+            int barX = frameX + SIDEBAR_WIDTH;
+            int barY = frameY + frameH - BOTTOM_BAR_HEIGHT;
+            int barW = frameW - SIDEBAR_WIDTH;
+            int barH = BOTTOM_BAR_HEIGHT;
+            return new int[]{barX, barY, barW, barH};
+        }
+    }
 }

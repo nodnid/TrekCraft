@@ -258,12 +258,17 @@ public class TricorderScreen extends Screen {
         int contentW = contentBounds[2];
         int contentH = contentBounds[3];
 
-        int buttonX = contentX + (contentW - BUTTON_WIDTH) / 2;
+        // Get bottom bar bounds for positioning the back button
+        int[] bottomBarBounds = LCARSRenderer.getBottomBarBounds(panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT);
+        int bottomBarX = bottomBarBounds[0];
+        int bottomBarY = bottomBarBounds[1];
+        int bottomBarW = bottomBarBounds[2];
+        int bottomBarH = bottomBarBounds[3];
 
-        // Layer navigation controls - positioned above the back button
+        // Layer navigation controls - positioned just above blue bar
         int navButtonWidth = 24;
         int navButtonHeight = 16;
-        int navY = contentY + contentH - BUTTON_HEIGHT - navButtonHeight - 12;
+        int navY = contentY + contentH - 18;  // Just above blue bar
 
         // Left button [<] - decrease layer
         int leftBtnX = contentX + 8;
@@ -282,8 +287,8 @@ public class TricorderScreen extends Screen {
                 .colors(LCARSRenderer.ORANGE, LCARSRenderer.LAVENDER)
                 .build());
 
-        // Right button [>] - increase layer
-        int rightBtnX = leftBtnX + navButtonWidth + 60;
+        // Right button [>] - increase layer (positioned after Y-level text space)
+        int rightBtnX = leftBtnX + navButtonWidth + 50;  // Space for "Y=ALL" text between
         addRenderableWidget(LCARSButton.lcarsBuilder(
                 Component.literal(">"),
                 button -> {
@@ -299,8 +304,11 @@ public class TricorderScreen extends Screen {
                 .colors(LCARSRenderer.ORANGE, LCARSRenderer.LAVENDER)
                 .build());
 
-        // Back button - go to menu if came from there, otherwise close
-        int backY = contentY + contentH - BUTTON_HEIGHT - 4;
+        // Back button - positioned in the blue bottom bar, well past the elbow curve
+        int backButtonWidth = 80;
+        int backButtonHeight = 18;
+        int backX = bottomBarX + 50;  // Well past the elbow curve into flat section
+        int backY = bottomBarY + (bottomBarH - backButtonHeight) / 2 + 10;  // Centered in the blue bar
         addRenderableWidget(LCARSButton.lcarsBuilder(
                 Component.literal("< BACK"),
                 button -> {
@@ -312,8 +320,8 @@ public class TricorderScreen extends Screen {
                         this.onClose();
                     }
                 }
-        ).bounds(buttonX, backY, BUTTON_WIDTH, BUTTON_HEIGHT)
-                .colors(LCARSRenderer.BLUE, LCARSRenderer.LAVENDER)
+        ).bounds(backX, backY, backButtonWidth, backButtonHeight)
+                .colors(LCARSRenderer.LAVENDER, LCARSRenderer.BLUE)
                 .build());
     }
 
@@ -424,23 +432,25 @@ public class TricorderScreen extends Screen {
      * Renders the scan results as an isometric 3D view of the scanned area.
      */
     private void renderScanResults(GuiGraphics g, int contentX, int contentY, int contentW, int contentH) {
-        // Reserve space for layer controls, direction indicator, and back button
-        int renderHeight = contentH - BUTTON_HEIGHT - 50;
-        int centerX = contentX + contentW / 2;
-        int centerY = contentY + 12 + renderHeight / 2;
+        // Get top bar bounds for positioning the count text
+        int[] topBarBounds = LCARSRenderer.getTopBarBounds(panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT);
+        int topBarX = topBarBounds[0];
+        int topBarY = topBarBounds[1];
+        int topBarW = topBarBounds[2];
+        int topBarH = topBarBounds[3];
 
-        // Block rendering size (how big each block appears)
-        int blockSize = 10;
-        // Grid spacing (distance between block positions) - larger = more spread out
-        int gridSpacing = 8;
-
-        // Draw count and layer indicator at top
+        // Draw count in the yellow top bar (dark text to match title)
+        // Position in the flat horizontal section, well past the curved elbow
         int blockCount = scanBlocks != null ? scanBlocks.size() : 0;
         String countText = blockCount + " ANOMAL" + (blockCount == 1 ? "Y" : "IES");
-        String layerText = currentLayer == SHOW_ALL ? "Y=ALL" : "Y=" + currentLayer;
-        g.drawString(this.font, countText, contentX + 4, contentY + 2, LCARSRenderer.LAVENDER);
-        int layerWidth = this.font.width(layerText);
-        g.drawString(this.font, layerText, contentX + contentW - layerWidth - 4, contentY + 2, LCARSRenderer.ORANGE);
+        int countX = topBarX + 45;  // Well past the elbow curve
+        int countY = topBarY + (topBarH - this.font.lineHeight) / 2 - 4;
+        g.drawString(this.font, countText, countX, countY, LCARSRenderer.TEXT_DARK, false);
+
+        // Reserve minimal space for layer controls at bottom (just above blue bar)
+        int renderHeight = contentH - 20;  // More space for the 3D cube
+        int centerX = contentX + contentW / 2;
+        int centerY = contentY + (renderHeight - 10) / 2;  // Center the cube in available space
 
         if (scanBlocks == null || scanBlocks.isEmpty()) {
             // Show "no interesting blocks" message
@@ -452,22 +462,17 @@ public class TricorderScreen extends Screen {
             render3DBlockScene(g, centerX, centerY, scanBlocks);
         }
 
-        // Draw layer indicator text between navigation buttons
-        int navY = contentY + contentH - BUTTON_HEIGHT - 16 - 12;
-        String layerIndicator = currentLayer == SHOW_ALL ? "ALL" : "LAYER " + (currentLayer + 1) + "/10";
-        int indicatorX = contentX + 8 + 24 + 4;  // after left button
+        // Draw layer indicator text between navigation buttons (format: Y=ALL or Y=3)
+        // Position just above the blue bar
+        int navY = contentY + contentH - 18;  // Just above blue bar
+        String layerIndicator = currentLayer == SHOW_ALL ? "Y=ALL" : "Y=" + currentLayer;
+        int indicatorX = contentX + 8 + 24 + 6;  // after left button
         g.drawString(this.font, layerIndicator, indicatorX, navY + 4, LCARSRenderer.LAVENDER);
 
-        // Draw direction indicator (scan direction label)
-        String dirText = "SCAN: " + scanFacing;
+        // Draw direction indicator (scan direction label) to the right of the [>] button
+        String dirText = "SCAN:" + scanFacing.charAt(0);  // e.g., "SCAN:E"
         int dirWidth = this.font.width(dirText);
         g.drawString(this.font, dirText, contentX + contentW - dirWidth - 4, navY + 4, LCARSRenderer.ORANGE);
-
-        // Draw compass rose in top-right corner of content area
-        int compassRadius = 18;
-        int compassX = contentX + contentW - compassRadius - 6;
-        int compassY = contentY + compassRadius + 14;
-        renderCompass(g, compassX, compassY, compassRadius);
     }
 
     /**
