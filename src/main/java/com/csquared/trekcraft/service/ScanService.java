@@ -13,10 +13,14 @@ import net.minecraft.tags.TagKey;
 import net.minecraft.world.Container;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.*;
@@ -126,8 +130,27 @@ public class ScanService {
             }
         }
 
+        // Scan for entities (mobs) in the area
+        List<ScanResultPayload.ScannedEntity> scannedEntities = new ArrayList<>();
+        AABB scanBox = new AABB(
+                minPos.getX(), minPos.getY(), minPos.getZ(),
+                maxPos.getX() + 1, maxPos.getY() + 1, maxPos.getZ() + 1
+        );
+        List<Entity> entities = level.getEntities(player, scanBox, e -> e instanceof LivingEntity && !(e instanceof Player));
+
+        for (Entity entity : entities) {
+            // Calculate relative position within scan area
+            float relX = (float) (entity.getX() - minPos.getX());
+            float relY = (float) (entity.getY() - minPos.getY());
+            float relZ = (float) (entity.getZ() - minPos.getZ());
+            String entityType = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString();
+            float yaw = entity.getYRot();
+
+            scannedEntities.add(new ScanResultPayload.ScannedEntity(relX, relY, relZ, entityType, yaw));
+        }
+
         // Send scan results to client
-        ScanResultPayload payload = new ScanResultPayload(facing.getName().toUpperCase(), interestingBlocks);
+        ScanResultPayload payload = new ScanResultPayload(facing.getName().toUpperCase(), interestingBlocks, scannedEntities);
         PacketDistributor.sendToPlayer(player, payload);
     }
 

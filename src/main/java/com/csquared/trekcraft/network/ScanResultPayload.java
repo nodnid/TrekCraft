@@ -14,7 +14,8 @@ import java.util.List;
  */
 public record ScanResultPayload(
         String facing,
-        List<ScannedBlock> blocks
+        List<ScannedBlock> blocks,
+        List<ScannedEntity> entities
 ) implements CustomPacketPayload {
 
     public static final Type<ScanResultPayload> TYPE = new Type<>(
@@ -24,6 +25,7 @@ public record ScanResultPayload(
     public static final StreamCodec<RegistryFriendlyByteBuf, ScanResultPayload> STREAM_CODEC = StreamCodec.composite(
             ByteBufCodecs.STRING_UTF8, ScanResultPayload::facing,
             ScannedBlock.STREAM_CODEC.apply(ByteBufCodecs.list()), ScanResultPayload::blocks,
+            ScannedEntity.STREAM_CODEC.apply(ByteBufCodecs.list()), ScanResultPayload::entities,
             ScanResultPayload::new
     );
 
@@ -43,6 +45,21 @@ public record ScanResultPayload(
                 ByteBufCodecs.INT, ScannedBlock::z,
                 ByteBufCodecs.STRING_UTF8, ScannedBlock::blockId,
                 ScannedBlock::new
+        );
+    }
+
+    /**
+     * Represents an entity found during scan.
+     * Coordinates are relative positions within scan area (0.0-10.0 range).
+     */
+    public record ScannedEntity(float x, float y, float z, String entityType, float yaw) {
+        public static final StreamCodec<RegistryFriendlyByteBuf, ScannedEntity> STREAM_CODEC = StreamCodec.composite(
+                ByteBufCodecs.FLOAT, ScannedEntity::x,
+                ByteBufCodecs.FLOAT, ScannedEntity::y,
+                ByteBufCodecs.FLOAT, ScannedEntity::z,
+                ByteBufCodecs.STRING_UTF8, ScannedEntity::entityType,
+                ByteBufCodecs.FLOAT, ScannedEntity::yaw,
+                ScannedEntity::new
         );
     }
 }
