@@ -35,8 +35,8 @@ import java.util.List;
 
 public class TricorderScreen extends Screen {
 
-    private static final int PANEL_WIDTH = 220;
-    private static final int PANEL_HEIGHT = 200;
+    private static final int PANEL_WIDTH = 250;
+    private static final int PANEL_HEIGHT = 220;
     private static final int BUTTON_WIDTH = 170;
     private static final int BUTTON_HEIGHT = 22;
     private static final int BUTTON_SPACING = 6;
@@ -46,12 +46,14 @@ public class TricorderScreen extends Screen {
     private int currentLayer = SHOW_ALL;  // -1 = "Show All", 0-9 = specific layer
 
     // 3D view rotation (in degrees) - can be adjusted by mouse drag
-    private float viewRotationX = 30.0f;   // Vertical tilt (up/down)
-    private float viewRotationY = 45.0f;   // Horizontal rotation (right-shoulder behind view)
+    // Default view: over the player's shoulder looking into the scan area
+    private float viewRotationX = -25.0f;  // Looking down from above
+    private float viewRotationY = 200.0f;  // Looking from behind, rotated slightly to one side
     private boolean isDragging = false;
     private double lastMouseX, lastMouseY;
 
     private final int fuel;
+    private final int slips;
     private final boolean hasRoom;
     private final List<OpenTricorderScreenPayload.PadEntry> pads;
     private final List<OpenTricorderScreenPayload.SignalEntry> signals;
@@ -73,11 +75,12 @@ public class TricorderScreen extends Screen {
         SCAN_RESULTS
     }
 
-    public TricorderScreen(int fuel, boolean hasRoom,
+    public TricorderScreen(int fuel, int slips, boolean hasRoom,
                            List<OpenTricorderScreenPayload.PadEntry> pads,
                            List<OpenTricorderScreenPayload.SignalEntry> signals) {
         super(Component.translatable("screen.trekcraft.tricorder"));
         this.fuel = fuel;
+        this.slips = slips;
         this.hasRoom = hasRoom;
         this.pads = pads;
         this.signals = signals;
@@ -88,7 +91,7 @@ public class TricorderScreen extends Screen {
      */
     public static TricorderScreen createForScanResults(String facing, List<ScanResultPayload.ScannedBlock> blocks,
                                                         List<ScanResultPayload.ScannedEntity> entities) {
-        TricorderScreen screen = new TricorderScreen(0, false, List.of(), List.of());
+        TricorderScreen screen = new TricorderScreen(0, 0, false, List.of(), List.of());
         screen.scanFacing = facing;
         screen.scanBlocks = blocks;
         screen.scanEntities = entities != null ? entities : List.of();
@@ -265,32 +268,15 @@ public class TricorderScreen extends Screen {
         int bottomBarW = bottomBarBounds[2];
         int bottomBarH = bottomBarBounds[3];
 
-        // Layer navigation controls - positioned just above blue bar
-        int navButtonWidth = 24;
-        int navButtonHeight = 16;
-        int navY = contentY + contentH - 18;  // Just above blue bar
+        // Layer navigation controls - vertical up/down buttons in the left sidebar
+        // Position in one of the black rectangular areas of the sidebar
+        int navButtonSize = 16;  // Small square buttons
+        int navX = panelLeft + 8;  // Moved left
+        int navStartY = panelTop + 70;  // Moved up
 
-        // Left button [<] - decrease layer
-        int leftBtnX = contentX + 8;
+        // Up button [^] - increase layer
         addRenderableWidget(LCARSButton.lcarsBuilder(
-                Component.literal("<"),
-                button -> {
-                    if (currentLayer == SHOW_ALL) {
-                        currentLayer = 9;
-                    } else if (currentLayer == 0) {
-                        currentLayer = SHOW_ALL;
-                    } else {
-                        currentLayer--;
-                    }
-                }
-        ).bounds(leftBtnX, navY, navButtonWidth, navButtonHeight)
-                .colors(LCARSRenderer.ORANGE, LCARSRenderer.LAVENDER)
-                .build());
-
-        // Right button [>] - increase layer (positioned after Y-level text space)
-        int rightBtnX = leftBtnX + navButtonWidth + 50;  // Space for "Y=ALL" text between
-        addRenderableWidget(LCARSButton.lcarsBuilder(
-                Component.literal(">"),
+                Component.literal("^"),
                 button -> {
                     if (currentLayer == SHOW_ALL) {
                         currentLayer = 0;
@@ -300,15 +286,31 @@ public class TricorderScreen extends Screen {
                         currentLayer++;
                     }
                 }
-        ).bounds(rightBtnX, navY, navButtonWidth, navButtonHeight)
+        ).bounds(navX, navStartY, navButtonSize, navButtonSize)
                 .colors(LCARSRenderer.ORANGE, LCARSRenderer.LAVENDER)
                 .build());
 
-        // Back button - positioned in the blue bottom bar, well past the elbow curve
-        int backButtonWidth = 80;
-        int backButtonHeight = 18;
-        int backX = bottomBarX + 50;  // Well past the elbow curve into flat section
-        int backY = bottomBarY + (bottomBarH - backButtonHeight) / 2 + 10;  // Centered in the blue bar
+        // Down button [v] - decrease layer
+        addRenderableWidget(LCARSButton.lcarsBuilder(
+                Component.literal("v"),
+                button -> {
+                    if (currentLayer == SHOW_ALL) {
+                        currentLayer = 9;
+                    } else if (currentLayer == 0) {
+                        currentLayer = SHOW_ALL;
+                    } else {
+                        currentLayer--;
+                    }
+                }
+        ).bounds(navX, navStartY + navButtonSize + 2, navButtonSize, navButtonSize)
+                .colors(LCARSRenderer.ORANGE, LCARSRenderer.LAVENDER)
+                .build());
+
+        // Back button - positioned in the blue bottom bar
+        int backButtonWidth = 65;  // Smaller width
+        int backButtonHeight = 14;  // Smaller height
+        int backX = bottomBarX + 80;  // Moved right
+        int backY = bottomBarY + (bottomBarH - backButtonHeight) / 2 + 14;  // Moved lower
         addRenderableWidget(LCARSButton.lcarsBuilder(
                 Component.literal("< BACK"),
                 button -> {
@@ -338,12 +340,19 @@ public class TricorderScreen extends Screen {
         // First render the standard blurred background
         super.renderBackground(guiGraphics, mouseX, mouseY, partialTick);
 
-        // Then draw LCARS frame on top of the blur, before widgets
+        // Fill the entire panel area with black before drawing the LCARS frame
+        guiGraphics.fill(panelLeft, panelTop, panelLeft + PANEL_WIDTH, panelTop + PANEL_HEIGHT, 0xFF000000);
+
+        // Then draw LCARS frame on top of the black background
+        // For SCAN_RESULTS, the title (right side) shows the anomaly count
         String titleText = switch (currentState) {
             case MAIN_MENU -> "TRICORDER";
             case PAD_LIST -> "SELECT PAD";
             case SIGNAL_LIST -> "SELECT SIGNAL";
-            case SCAN_RESULTS -> "SCAN RESULTS";
+            case SCAN_RESULTS -> {
+                int count = scanBlocks != null ? scanBlocks.size() : 0;
+                yield count + " ANOMAL" + (count == 1 ? "Y" : "IES");
+            }
         };
         LCARSRenderer.drawLCARSFrame(guiGraphics, panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT, titleText, this.font);
     }
@@ -385,41 +394,30 @@ public class TricorderScreen extends Screen {
             guiGraphics.drawString(this.font, legend, contentX + (contentW - legendWidth) / 2, legendY, LCARSRenderer.LAVENDER);
         }
 
-        // Draw fuel status at bottom (only on main menu)
+        // Draw currency info in the sidebar (only on main menu)
         if (currentState == MenuState.MAIN_MENU) {
-            int statusY = contentY + contentH - 20;
+            // Sidebar currency display
+            int sidebarX = panelLeft + 6;
+            int sidebarStartY = panelTop + 70;
 
             if (!hasRoom) {
-                String status = "NO TRANSPORTER ROOM";
-                int statusWidth = this.font.width(status);
-                guiGraphics.drawString(this.font, status, contentX + (contentW - statusWidth) / 2, statusY, LCARSRenderer.RED);
+                // Show warning in sidebar when no transporter room
+                guiGraphics.drawString(this.font, "NO", sidebarX, sidebarStartY, LCARSRenderer.RED, false);
+                guiGraphics.drawString(this.font, "ROOM", sidebarX, sidebarStartY + 10, LCARSRenderer.RED, false);
             } else {
-                // Draw fuel label and bar
-                String fuelLabel = "FUEL:";
-                guiGraphics.drawString(this.font, fuelLabel, contentX + 4, statusY, LCARSRenderer.ORANGE);
-
-                int barX = contentX + this.font.width(fuelLabel) + 8;
-                int barWidth = 80;
-                int barHeight = 8;
-
-                // Determine fuel color based on level
-                int fuelColor;
-                if (fuel <= 0) {
-                    fuelColor = LCARSRenderer.RED;
-                } else if (fuel < 10) {
-                    fuelColor = LCARSRenderer.ORANGE;
-                } else {
-                    fuelColor = LCARSRenderer.BLUE;
-                }
-
-                // Draw fuel bar (max assumed 64 for display purposes)
-                float maxFuel = 64.0f;
-                LCARSRenderer.drawStatusBar(guiGraphics, barX, statusY, barWidth, barHeight, fuel, maxFuel, fuelColor);
-
-                // Draw numeric value
-                String fuelNum = String.valueOf(fuel);
-                guiGraphics.drawString(this.font, fuelNum, barX + barWidth + 6, statusY, LCARSRenderer.ORANGE);
+                // Transport funds (strips in transporter room)
+                ItemStack stripStack = new ItemStack(ModItems.LATINUM_STRIP.get());
+                guiGraphics.renderFakeItem(stripStack, sidebarX, sidebarStartY);
+                String fuelStr = String.valueOf(fuel);
+                guiGraphics.drawString(this.font, fuelStr, sidebarX + 18, sidebarStartY + 4, LCARSRenderer.TEXT_DARK, false);
             }
+
+            // Scan funds (slips in player inventory) - always show
+            int slipsY = sidebarStartY + 22;
+            ItemStack slipStack = new ItemStack(ModItems.LATINUM_SLIP.get());
+            guiGraphics.renderFakeItem(slipStack, sidebarX, slipsY);
+            String slipsStr = String.valueOf(slips);
+            guiGraphics.drawString(this.font, slipsStr, sidebarX + 18, slipsY + 4, LCARSRenderer.TEXT_DARK, false);
         }
 
         // Draw scan results with isometric 3D visualization
@@ -432,25 +430,29 @@ public class TricorderScreen extends Screen {
      * Renders the scan results as an isometric 3D view of the scanned area.
      */
     private void renderScanResults(GuiGraphics g, int contentX, int contentY, int contentW, int contentH) {
-        // Get top bar bounds for positioning the count text
+        // Get top bar bounds for positioning the label text
         int[] topBarBounds = LCARSRenderer.getTopBarBounds(panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT);
         int topBarX = topBarBounds[0];
         int topBarY = topBarBounds[1];
         int topBarW = topBarBounds[2];
         int topBarH = topBarBounds[3];
 
-        // Draw count in the yellow top bar (dark text to match title)
-        // Position in the flat horizontal section, well past the curved elbow
-        int blockCount = scanBlocks != null ? scanBlocks.size() : 0;
-        String countText = blockCount + " ANOMAL" + (blockCount == 1 ? "Y" : "IES");
-        int countX = topBarX + 45;  // Well past the elbow curve
-        int countY = topBarY + (topBarH - this.font.lineHeight) / 2 - 4;
-        g.drawString(this.font, countText, countX, countY, LCARSRenderer.TEXT_DARK, false);
+        // Draw "Scan results" label on the left side of the top bar (scaled smaller)
+        // (The anomaly count is drawn as the title on the right by LCARSRenderer)
+        String labelText = "Scan results";
+        float textScale = 0.85f;
+        int labelX = topBarX + 28;  // Left side of top bar, moved more inward
+        int labelY = topBarY + (topBarH - (int)(this.font.lineHeight * textScale)) / 2 - 8;
+        g.pose().pushPose();
+        g.pose().translate(labelX, labelY, 0);
+        g.pose().scale(textScale, textScale, 1.0f);
+        g.drawString(this.font, labelText, 0, 0, LCARSRenderer.TEXT_DARK, false);
+        g.pose().popPose();
 
         // Reserve minimal space for layer controls at bottom (just above blue bar)
         int renderHeight = contentH - 20;  // More space for the 3D cube
         int centerX = contentX + contentW / 2;
-        int centerY = contentY + (renderHeight - 10) / 2;  // Center the cube in available space
+        int centerY = contentY + (renderHeight - 10) / 2 + 25;  // Center the cube, moved down to avoid top bar
 
         if (scanBlocks == null || scanBlocks.isEmpty()) {
             // Show "no interesting blocks" message
@@ -462,17 +464,35 @@ public class TricorderScreen extends Screen {
             render3DBlockScene(g, centerX, centerY, scanBlocks);
         }
 
-        // Draw layer indicator text between navigation buttons (format: Y=ALL or Y=3)
-        // Position just above the blue bar
-        int navY = contentY + contentH - 18;  // Just above blue bar
-        String layerIndicator = currentLayer == SHOW_ALL ? "Y=ALL" : "Y=" + currentLayer;
-        int indicatorX = contentX + 8 + 24 + 6;  // after left button
-        g.drawString(this.font, layerIndicator, indicatorX, navY + 4, LCARSRenderer.LAVENDER);
+        // Draw Y-LVL label above the buttons with a line underneath
+        int navButtonSize = 16;
+        int navX = panelLeft + 8;
+        int navStartY = panelTop + 70;
 
-        // Draw direction indicator (scan direction label) to the right of the [>] button
-        String dirText = "SCAN:" + scanFacing.charAt(0);  // e.g., "SCAN:E"
+        // Y-LVL label above buttons (no shadow)
+        String yLvlLabel = "Y-LVL";
+        int yLvlLabelX = navX - 2;
+        int yLvlLabelY = navStartY - 14;
+        g.drawString(this.font, yLvlLabel, yLvlLabelX, yLvlLabelY, LCARSRenderer.TEXT_DARK, false);
+
+        // Line underneath the label
+        int lineY = navStartY - 4;
+        int lineWidth = this.font.width(yLvlLabel) + 4;
+        g.fill(yLvlLabelX, lineY, yLvlLabelX + lineWidth, lineY + 1, LCARSRenderer.TEXT_DARK);
+
+        // Draw layer indicator to the right of the up/down buttons
+        String layerIndicator = currentLayer == SHOW_ALL ? "ALL" : String.valueOf(currentLayer);
+        // Position to the right of buttons, vertically centered between them
+        int indicatorX = navX + navButtonSize + 3;  // Right of buttons
+        int indicatorY = navStartY + navButtonSize - 2;  // Centered vertically
+        g.drawString(this.font, layerIndicator, indicatorX, indicatorY, LCARSRenderer.LAVENDER, false);
+
+        // Draw direction indicator in the bottom area
+        int[] bottomBarBounds = LCARSRenderer.getBottomBarBounds(panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT);
+        int bottomBarY = bottomBarBounds[1];
+        String dirText = "SCAN:" + scanFacing.charAt(0);  // e.g., "SCAN:N"
         int dirWidth = this.font.width(dirText);
-        g.drawString(this.font, dirText, contentX + contentW - dirWidth - 4, navY + 4, LCARSRenderer.ORANGE);
+        g.drawString(this.font, dirText, contentX + contentW - dirWidth - 4, bottomBarY + 10, LCARSRenderer.ORANGE);
     }
 
     /**
@@ -664,8 +684,8 @@ public class TricorderScreen extends Screen {
                 (ScanResultPayload.ScannedBlock b) -> b.x() + b.z() - b.y()
         ));
 
-        // Scale for each block in the scene
-        float blockScale = 7.0f;
+        // Scale for each block in the scene - larger value = bigger visualization
+        float blockScale = 11.0f;
 
         PoseStack poseStack = g.pose();
         poseStack.pushPose();
@@ -1101,13 +1121,15 @@ public class TricorderScreen extends Screen {
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         // Start drag rotation when clicking in scan results view
         if (currentState == MenuState.SCAN_RESULTS && button == 0) {
-            // Check if click is in the render area (not on buttons)
+            // Check if click is in the render area (not on buttons or sidebar)
             int[] contentBounds = LCARSRenderer.getContentBounds(panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT);
+            int contentX = contentBounds[0];
             int contentY = contentBounds[1];
             int contentH = contentBounds[3];
             int renderAreaBottom = contentY + contentH - BUTTON_HEIGHT - 50;
 
-            if (mouseY < renderAreaBottom) {
+            // Only start drag if click is in the content area (not sidebar) and above buttons
+            if (mouseX > contentX && mouseY < renderAreaBottom) {
                 isDragging = true;
                 lastMouseX = mouseX;
                 lastMouseY = mouseY;

@@ -14,6 +14,7 @@ import java.util.UUID;
 
 public record OpenTricorderScreenPayload(
         int fuel,
+        int slips,
         boolean hasRoom,
         List<PadEntry> pads,
         List<SignalEntry> signals
@@ -25,6 +26,7 @@ public record OpenTricorderScreenPayload(
 
     public static final StreamCodec<RegistryFriendlyByteBuf, OpenTricorderScreenPayload> STREAM_CODEC = StreamCodec.composite(
             ByteBufCodecs.INT, OpenTricorderScreenPayload::fuel,
+            ByteBufCodecs.INT, OpenTricorderScreenPayload::slips,
             ByteBufCodecs.BOOL, OpenTricorderScreenPayload::hasRoom,
             PadEntry.STREAM_CODEC.apply(ByteBufCodecs.list()), OpenTricorderScreenPayload::pads,
             SignalEntry.STREAM_CODEC.apply(ByteBufCodecs.list()), OpenTricorderScreenPayload::signals,

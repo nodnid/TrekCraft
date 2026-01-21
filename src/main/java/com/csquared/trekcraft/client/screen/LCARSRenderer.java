@@ -21,6 +21,28 @@ public class LCARSRenderer {
     public static final int TEXT_DARK = 0xFF000000;
     public static final int TEXT_LIGHT = 0xFFFF9966;
 
+    /**
+     * Elbow corner positions for LCARS frame curves.
+     */
+    public enum ElbowCorner {
+        TOP_LEFT,
+        TOP_RIGHT,
+        BOTTOM_LEFT,
+        BOTTOM_RIGHT
+    }
+
+    /**
+     * Layout constants for programmatic LCARS frame rendering.
+     * These values create an authentic LCARS appearance with proper proportions.
+     */
+    public static class FrameLayout {
+        public static final int BAR_HEIGHT = 20;           // Height of top/bottom horizontal bars
+        public static final int SIDEBAR_WIDTH = 54;        // Width of left sidebar (matches texture)
+        public static final int GAP = 3;                   // Critical LCARS gap between elements
+        public static final int ELBOW_OUTER_RADIUS = 40;   // Outer curve radius
+        public static final int ELBOW_INNER_RADIUS = 20;   // Inner curve radius (bar thickness in curve)
+    }
+
     // Texture resource location
     public static final ResourceLocation LCARS_FRAME_TEXTURE =
             ResourceLocation.fromNamespaceAndPath("trekcraft", "textures/gui/lcars_frame.png");
@@ -212,17 +234,77 @@ public class LCARSRenderer {
 
     /**
      * Draw the LCARS frame using a texture image.
+     * Uses segmented rendering to preserve elbow curves while allowing the frame to scale.
      */
     public static void drawLCARSFrameTextured(GuiGraphics g, int x, int y, int w, int h, String title, Font font) {
-        // Draw the texture scaled to fit the frame dimensions
-        g.blit(LCARS_FRAME_TEXTURE, x, y, w, h, 0, 0, TEXTURE_WIDTH, TEXTURE_HEIGHT, TEXTURE_WIDTH, TEXTURE_HEIGHT);
+        drawLCARSFrameSegmented(g, x, y, w, h, title, font);
+    }
 
-        // Title text (right-aligned in top bar area)
+    /**
+     * Draw the LCARS frame using segmented texture rendering.
+     * Splits the texture into three horizontal strips to preserve elbow curves
+     * while allowing the frame to scale properly.
+     */
+    public static void drawLCARSFrameSegmented(GuiGraphics g, int x, int y, int w, int h, String title, Font font) {
+        // Texture coordinate constants
+        int TEX_W = TEXTURE_WIDTH;
+        int TEX_H = TEXTURE_HEIGHT;
+        int ELBOW_WIDTH = 80;      // Width of elbow curve region
+        int END_CAP_WIDTH = 10;    // Rounded right end of bars
+        int TOP_HEIGHT = 48;       // Top strip height in texture
+        int BOTTOM_HEIGHT = 52;    // Bottom strip height in texture
+        int SIDEBAR_TEX_WIDTH = 54; // Sidebar width in texture
+
+        // Calculate scaled heights for output
+        float scaleY = (float) h / TEX_H;
+        int scaledTopH = (int)(TOP_HEIGHT * scaleY);
+        int scaledBottomH = (int)(BOTTOM_HEIGHT * scaleY);
+        int middleH = h - scaledTopH - scaledBottomH;
+
+        // Calculate bar destination width
+        int barDestW = w - ELBOW_WIDTH - END_CAP_WIDTH;
+
+        // 1. TOP STRIP
+        // Left elbow (preserve aspect ratio)
+        g.blit(LCARS_FRAME_TEXTURE, x, y, ELBOW_WIDTH, scaledTopH,
+               0, 0, ELBOW_WIDTH, TOP_HEIGHT, TEX_W, TEX_H);
+        // Stretched middle bar
+        g.blit(LCARS_FRAME_TEXTURE, x + ELBOW_WIDTH, y, barDestW, scaledTopH,
+               ELBOW_WIDTH, 0, TEX_W - ELBOW_WIDTH - END_CAP_WIDTH, TOP_HEIGHT, TEX_W, TEX_H);
+        // Right end cap
+        g.blit(LCARS_FRAME_TEXTURE, x + w - END_CAP_WIDTH, y, END_CAP_WIDTH, scaledTopH,
+               TEX_W - END_CAP_WIDTH, 0, END_CAP_WIDTH, TOP_HEIGHT, TEX_W, TEX_H);
+
+        // 2. MIDDLE STRIP (sidebar only, stretched vertically)
+        int middleY = y + scaledTopH;
+        int texMiddleH = TEX_H - TOP_HEIGHT - BOTTOM_HEIGHT;
+        g.blit(LCARS_FRAME_TEXTURE, x, middleY, SIDEBAR_TEX_WIDTH, middleH,
+               0, TOP_HEIGHT, SIDEBAR_TEX_WIDTH, texMiddleH, TEX_W, TEX_H);
+
+        // 3. BOTTOM STRIP
+        int bottomY = y + h - scaledBottomH;
+        int bottomTexY = TEX_H - BOTTOM_HEIGHT;
+        // Left elbow
+        g.blit(LCARS_FRAME_TEXTURE, x, bottomY, ELBOW_WIDTH, scaledBottomH,
+               0, bottomTexY, ELBOW_WIDTH, BOTTOM_HEIGHT, TEX_W, TEX_H);
+        // Stretched middle bar
+        g.blit(LCARS_FRAME_TEXTURE, x + ELBOW_WIDTH, bottomY, barDestW, scaledBottomH,
+               ELBOW_WIDTH, bottomTexY, TEX_W - ELBOW_WIDTH - END_CAP_WIDTH, BOTTOM_HEIGHT, TEX_W, TEX_H);
+        // Right end cap
+        g.blit(LCARS_FRAME_TEXTURE, x + w - END_CAP_WIDTH, bottomY, END_CAP_WIDTH, scaledBottomH,
+               TEX_W - END_CAP_WIDTH, bottomTexY, END_CAP_WIDTH, BOTTOM_HEIGHT, TEX_W, TEX_H);
+
+        // Title text (right-aligned in top bar area, scaled smaller)
         if (title != null && font != null) {
-            int titleWidth = font.width(title);
-            int titleX = x + w - titleWidth - 10;
-            int titleY = y + (TEX_TOP_BAR_HEIGHT - font.lineHeight) / 2 + 2;
-            g.drawString(font, title, titleX, titleY, TEXT_DARK, false);
+            float textScale = 0.85f;
+            int scaledWidth = (int)(font.width(title) * textScale);
+            int titleX = x + w - scaledWidth - 45;  // Moved more inward
+            int titleY = y + (scaledTopH - (int)(font.lineHeight * textScale)) / 2 - 8;
+            g.pose().pushPose();
+            g.pose().translate(titleX, titleY, 0);
+            g.pose().scale(textScale, textScale, 1.0f);
+            g.drawString(font, title, 0, 0, TEXT_DARK, false);
+            g.pose().popPose();
         }
     }
 
@@ -301,24 +383,24 @@ public class LCARSRenderer {
 
     /**
      * Get content bounds for texture-based rendering.
-     * These values should be adjusted based on the actual texture layout.
+     * Uses segment-based calculations to match the segmented rendering approach.
      */
     public static int[] getContentBoundsTextured(int frameX, int frameY, int frameW, int frameH) {
-        // Calculate the scaling factor from texture size to actual frame size
-        float scaleX = (float) frameW / TEXTURE_WIDTH;
+        // Segment constants (must match drawLCARSFrameSegmented)
+        int TOP_HEIGHT = 48;       // Top strip height in texture
+        int BOTTOM_HEIGHT = 52;    // Bottom strip height in texture
+
+        // Calculate scaled heights for the segments
         float scaleY = (float) frameH / TEXTURE_HEIGHT;
+        int scaledTopH = (int)(TOP_HEIGHT * scaleY);
+        int scaledBottomH = (int)(BOTTOM_HEIGHT * scaleY);
 
-        // Content area in texture coordinates (adjust these to match your texture)
-        int texContentX = TEX_SIDEBAR_WIDTH + TEX_CONTENT_PADDING;
-        int texContentY = TEX_TOP_BAR_HEIGHT + TEX_CONTENT_PADDING;
-        int texContentW = TEXTURE_WIDTH - TEX_SIDEBAR_WIDTH - TEX_CONTENT_PADDING * 2;
-        int texContentH = TEXTURE_HEIGHT - TEX_TOP_BAR_HEIGHT - TEX_BOTTOM_BAR_HEIGHT - TEX_CONTENT_PADDING * 2;
-
-        // Scale to actual frame size
-        int contentX = frameX + (int) (texContentX * scaleX);
-        int contentY = frameY + (int) (texContentY * scaleY);
-        int contentW = (int) (texContentW * scaleX);
-        int contentH = (int) (texContentH * scaleY);
+        // Content area calculation
+        // Sidebar width stays at original size (54px), not scaled
+        int contentX = frameX + TEX_SIDEBAR_WIDTH + TEX_CONTENT_PADDING;
+        int contentY = frameY + scaledTopH + TEX_CONTENT_PADDING;
+        int contentW = frameW - TEX_SIDEBAR_WIDTH - TEX_CONTENT_PADDING * 2;
+        int contentH = frameH - scaledTopH - scaledBottomH - TEX_CONTENT_PADDING * 2;
 
         return new int[]{contentX, contentY, contentW, contentH};
     }
@@ -381,13 +463,18 @@ public class LCARSRenderer {
      */
     public static int[] getTopBarBounds(int frameX, int frameY, int frameW, int frameH) {
         if (useTexture) {
-            float scaleX = (float) frameW / TEXTURE_WIDTH;
-            float scaleY = (float) frameH / TEXTURE_HEIGHT;
+            // Segment constants (must match drawLCARSFrameSegmented)
+            int TOP_HEIGHT = 48;
 
-            int barX = frameX + (int) (TEX_SIDEBAR_WIDTH * scaleX);
+            // Calculate scaled height for the top segment
+            float scaleY = (float) frameH / TEXTURE_HEIGHT;
+            int scaledTopH = (int)(TOP_HEIGHT * scaleY);
+
+            // Sidebar width stays at original size (54px), not scaled
+            int barX = frameX + TEX_SIDEBAR_WIDTH;
             int barY = frameY;
-            int barW = frameW - (int) (TEX_SIDEBAR_WIDTH * scaleX);
-            int barH = (int) (TEX_TOP_BAR_HEIGHT * scaleY);
+            int barW = frameW - TEX_SIDEBAR_WIDTH;
+            int barH = scaledTopH;
 
             return new int[]{barX, barY, barW, barH};
         } else {
@@ -407,13 +494,18 @@ public class LCARSRenderer {
      */
     public static int[] getBottomBarBounds(int frameX, int frameY, int frameW, int frameH) {
         if (useTexture) {
-            float scaleX = (float) frameW / TEXTURE_WIDTH;
-            float scaleY = (float) frameH / TEXTURE_HEIGHT;
+            // Segment constants (must match drawLCARSFrameSegmented)
+            int BOTTOM_HEIGHT = 52;
 
-            int barX = frameX + (int) (TEX_SIDEBAR_WIDTH * scaleX);
-            int barY = frameY + frameH - (int) (TEX_BOTTOM_BAR_HEIGHT * scaleY);
-            int barW = frameW - (int) (TEX_SIDEBAR_WIDTH * scaleX);
-            int barH = (int) (TEX_BOTTOM_BAR_HEIGHT * scaleY);
+            // Calculate scaled height for the bottom segment
+            float scaleY = (float) frameH / TEXTURE_HEIGHT;
+            int scaledBottomH = (int)(BOTTOM_HEIGHT * scaleY);
+
+            // Sidebar width stays at original size (54px), not scaled
+            int barX = frameX + TEX_SIDEBAR_WIDTH;
+            int barY = frameY + frameH - scaledBottomH;
+            int barW = frameW - TEX_SIDEBAR_WIDTH;
+            int barH = scaledBottomH;
 
             return new int[]{barX, barY, barW, barH};
         } else {

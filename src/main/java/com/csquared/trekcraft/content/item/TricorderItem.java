@@ -5,6 +5,7 @@ import com.csquared.trekcraft.data.TransporterNetworkSavedData.SignalType;
 import com.csquared.trekcraft.data.TricorderData;
 import com.csquared.trekcraft.network.OpenTricorderScreenPayload;
 import com.csquared.trekcraft.registry.ModDataComponents;
+import com.csquared.trekcraft.registry.ModItems;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
@@ -51,6 +52,15 @@ public class TricorderItem extends Item {
             int fuel = data.getTotalNetworkFuel();
             boolean hasRoom = data.hasAnyRoom();
 
+            // Count slips in player inventory
+            int slips = 0;
+            for (int i = 0; i < serverPlayer.getInventory().getContainerSize(); i++) {
+                ItemStack invStack = serverPlayer.getInventory().getItem(i);
+                if (invStack.is(ModItems.LATINUM_SLIP.get())) {
+                    slips += invStack.getCount();
+                }
+            }
+
             // Gather pad data
             List<OpenTricorderScreenPayload.PadEntry> pads = new ArrayList<>();
             for (var entry : data.getPads().entrySet()) {
@@ -73,7 +83,7 @@ public class TricorderItem extends Item {
             }
 
             // Send packet to open tricorder screen on client
-            PacketDistributor.sendToPlayer(serverPlayer, new OpenTricorderScreenPayload(fuel, hasRoom, pads, signals));
+            PacketDistributor.sendToPlayer(serverPlayer, new OpenTricorderScreenPayload(fuel, slips, hasRoom, pads, signals));
         }
 
         return InteractionResultHolder.sidedSuccess(stack, level.isClientSide);

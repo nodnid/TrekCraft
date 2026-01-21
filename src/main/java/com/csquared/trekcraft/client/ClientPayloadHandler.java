@@ -35,6 +35,7 @@ public class ClientPayloadHandler {
             Minecraft.getInstance().setScreen(
                     new TricorderScreen(
                             payload.fuel(),
+                            payload.slips(),
                             payload.hasRoom(),
                             payload.pads(),
                             payload.signals()
