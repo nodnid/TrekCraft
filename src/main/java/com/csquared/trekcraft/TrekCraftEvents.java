@@ -80,13 +80,18 @@ public class TrekCraftEvents {
         }
 
         // Remove held signals for tricorders no longer in this player's inventory
+        // Collect UUIDs to remove first to avoid ConcurrentModificationException
+        Set<UUID> toRemove = new HashSet<>();
         for (var entry : data.getSignals().entrySet()) {
             var signal = entry.getValue();
             if (signal.type() == TransporterNetworkSavedData.SignalType.HELD &&
                     player.getUUID().equals(signal.holderId()) &&
                     !currentTricorders.contains(signal.tricorderId())) {
-                data.unregisterSignal(signal.tricorderId());
+                toRemove.add(signal.tricorderId());
             }
+        }
+        for (UUID tricorderId : toRemove) {
+            data.unregisterSignal(tricorderId);
         }
     }
 
