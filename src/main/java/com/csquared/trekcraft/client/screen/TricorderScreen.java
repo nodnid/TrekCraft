@@ -790,18 +790,20 @@ public class TricorderScreen extends Screen {
         draw3DGridlines(g, poseStack);
 
         // Render scanned blocks
+        // Dimmed light for non-selected blocks (low ambient light)
+        int dimmedLight = LightTexture.pack(2, 2);
+
         for (ScanResultPayload.ScannedBlock block : sorted) {
             // Transform coordinates to check against filters
             int[] transformed = transformScanCoords(block.x(), block.y(), block.z());
 
-            // Skip blocks not on current Y layer when filtering
+            // Check if block is on the selected Y layer and Z slice
             boolean isActiveLayer = (currentLayer == SHOW_ALL || transformed[1] == currentLayer);
-            // Skip blocks not on current Z slice when filtering
             boolean isActiveZSlice = (currentZSlice == SHOW_ALL || transformed[2] == currentZSlice);
+            boolean isHighlighted = isActiveLayer && isActiveZSlice;
 
-            if (!isActiveLayer || !isActiveZSlice) {
-                continue;
-            }
+            // Use full brightness for highlighted blocks, dimmed for others
+            int lightLevel = isHighlighted ? LightTexture.FULL_BRIGHT : dimmedLight;
 
             try {
                 ResourceLocation blockLoc = ResourceLocation.parse(block.blockId());
@@ -815,7 +817,7 @@ public class TricorderScreen extends Screen {
                 float by = transformed[1] - 4.5f;
                 float bz = transformed[2] - 4.5f;
 
-                renderBlockAt(poseStack, blockRenderer, bufferSource, blockState, bx, by, bz);
+                renderBlockAt(poseStack, blockRenderer, bufferSource, blockState, bx, by, bz, lightLevel);
             } catch (Exception e) {
                 // Skip blocks that fail to render
             }
@@ -879,9 +881,10 @@ public class TricorderScreen extends Screen {
 
                 boolean isActiveLayer = (currentLayer == SHOW_ALL || entityLayer == currentLayer);
                 boolean isActiveZSlice = (currentZSlice == SHOW_ALL || entityZSlice == currentZSlice);
-                if (!isActiveLayer || !isActiveZSlice) {
-                    continue;  // Skip entities not on current layer or Z slice
-                }
+                boolean isHighlighted = isActiveLayer && isActiveZSlice;
+
+                // Use full brightness for highlighted entities, dimmed for others
+                int entityLight = isHighlighted ? LightTexture.FULL_BRIGHT : dimmedLight;
 
                 try {
                     // Create entity from type
@@ -906,7 +909,7 @@ public class TricorderScreen extends Screen {
                         // Apply entity's yaw rotation
                         poseStack.mulPose(Axis.YP.rotationDegrees(scannedEntity.yaw()));
 
-                        entityRenderer.render(entity, 0, 0, 0, 0, 1.0f, poseStack, bufferSource, LightTexture.FULL_BRIGHT);
+                        entityRenderer.render(entity, 0, 0, 0, 0, 1.0f, poseStack, bufferSource, entityLight);
                         bufferSource.endBatch();
                         poseStack.popPose();
 
@@ -927,14 +930,14 @@ public class TricorderScreen extends Screen {
      */
     private void renderBlockAt(PoseStack poseStack, BlockRenderDispatcher blockRenderer,
                                 MultiBufferSource bufferSource, BlockState blockState,
-                                float x, float y, float z) {
+                                float x, float y, float z, int packedLight) {
         poseStack.pushPose();
         poseStack.translate(x, y, z);
         blockRenderer.renderSingleBlock(
                 blockState,
                 poseStack,
                 bufferSource,
-                LightTexture.FULL_BRIGHT,
+                packedLight,
                 OverlayTexture.NO_OVERLAY
         );
         poseStack.popPose();
