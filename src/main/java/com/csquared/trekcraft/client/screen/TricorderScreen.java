@@ -2,8 +2,10 @@ package com.csquared.trekcraft.client.screen;
 
 import com.csquared.trekcraft.client.ClientPayloadHandler;
 import com.csquared.trekcraft.data.TransporterNetworkSavedData.SignalType;
+import com.csquared.trekcraft.data.TricorderData;
 import com.csquared.trekcraft.network.OpenTricorderScreenPayload;
 import com.csquared.trekcraft.network.ScanResultPayload;
+import com.csquared.trekcraft.registry.ModDataComponents;
 import com.csquared.trekcraft.registry.ModItems;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -43,7 +45,9 @@ public class TricorderScreen extends Screen {
 
     // Layer navigation for scan results
     private static final int SHOW_ALL = -1;
-    private int currentLayer = SHOW_ALL;  // -1 = "Show All", 0-9 = specific layer
+    private static final int FEET_LEVEL_LAYER = 5;  // Internal Y layer at player feet level
+    private int currentLayer = SHOW_ALL;  // -1 = "Show All", 0-9 = specific Y layer
+    private int currentZSlice = SHOW_ALL;  // -1 = "Show All", 0-9 = specific Z slice (depth)
 
     // 3D view rotation (in degrees) - can be adjusted by mouse drag
     // Default view: over the player's shoulder looking into the scan area
@@ -167,6 +171,7 @@ public class TricorderScreen extends Screen {
                         scanBlocks = ClientPayloadHandler.getCachedBlocks();
                         scanEntities = ClientPayloadHandler.getCachedEntities();
                         currentLayer = SHOW_ALL;  // Reset layer view
+                        currentZSlice = SHOW_ALL;  // Reset Z slice view
                         cameFromMenu = true;  // Track that we came from menu
                         currentState = MenuState.SCAN_RESULTS;
                         rebuildButtons();
@@ -174,6 +179,38 @@ public class TricorderScreen extends Screen {
             ).bounds(buttonX, buttonY, BUTTON_WIDTH, BUTTON_HEIGHT)
                     .colors(LCARSRenderer.PURPLE, LCARSRenderer.LAVENDER)
                     .build());
+        }
+
+        // Rename Tricorder button
+        buttonY += BUTTON_HEIGHT + BUTTON_SPACING;
+        addRenderableWidget(LCARSButton.lcarsBuilder(
+                Component.literal("RENAME TRICORDER"),
+                button -> openRenameTricorderScreen()
+        ).bounds(buttonX, buttonY, BUTTON_WIDTH, BUTTON_HEIGHT)
+                .colors(LCARSRenderer.LAVENDER, LCARSRenderer.PURPLE)
+                .build());
+    }
+
+    /**
+     * Opens the naming screen for the currently held tricorder.
+     */
+    private void openRenameTricorderScreen() {
+        Minecraft mc = Minecraft.getInstance();
+        Player player = mc.player;
+        if (player == null) return;
+
+        // Find the tricorder in hand
+        ItemStack stack = player.getMainHandItem();
+        if (!stack.is(ModItems.TRICORDER.get())) {
+            stack = player.getOffhandItem();
+        }
+
+        if (stack.is(ModItems.TRICORDER.get())) {
+            TricorderData data = stack.get(ModDataComponents.TRICORDER_DATA.get());
+            if (data != null) {
+                String currentName = data.getDisplayName();
+                mc.setScreen(NamingScreen.forTricorder(data.tricorderId(), currentName));
+            }
         }
     }
 
@@ -268,13 +305,17 @@ public class TricorderScreen extends Screen {
         int bottomBarW = bottomBarBounds[2];
         int bottomBarH = bottomBarBounds[3];
 
-        // Layer navigation controls - vertical up/down buttons in the left sidebar
-        // Position in one of the black rectangular areas of the sidebar
+        // Layer navigation controls - two vertical columns in the left sidebar
+        // Layout:  YZ-LVL
+        //          [^] [<]
+        //          [v] [>]
+        //           0  ALL
         int navButtonSize = 16;  // Small square buttons
-        int navX = panelLeft + 8;  // Moved left
-        int navStartY = panelTop + 70;  // Moved up
+        int navX = panelLeft + 4;  // Left sidebar
+        int navStartY = panelTop + 70;  // Button row Y position
+        int colGap = 6;  // Gap between Y and Z columns
 
-        // Up button [^] - increase layer
+        // Y up button [^] - increase layer (left column, top)
         addRenderableWidget(LCARSButton.lcarsBuilder(
                 Component.literal("^"),
                 button -> {
@@ -290,7 +331,7 @@ public class TricorderScreen extends Screen {
                 .colors(LCARSRenderer.ORANGE, LCARSRenderer.LAVENDER)
                 .build());
 
-        // Down button [v] - decrease layer
+        // Y down button [v] - decrease layer (left column, bottom)
         addRenderableWidget(LCARSButton.lcarsBuilder(
                 Component.literal("v"),
                 button -> {
@@ -304,6 +345,38 @@ public class TricorderScreen extends Screen {
                 }
         ).bounds(navX, navStartY + navButtonSize + 2, navButtonSize, navButtonSize)
                 .colors(LCARSRenderer.ORANGE, LCARSRenderer.LAVENDER)
+                .build());
+
+        // Z back button [<] - decrease Z slice (right column, top)
+        addRenderableWidget(LCARSButton.lcarsBuilder(
+                Component.literal("<"),
+                button -> {
+                    if (currentZSlice == SHOW_ALL) {
+                        currentZSlice = 9;
+                    } else if (currentZSlice == 0) {
+                        currentZSlice = SHOW_ALL;
+                    } else {
+                        currentZSlice--;
+                    }
+                }
+        ).bounds(navX + navButtonSize + colGap, navStartY, navButtonSize, navButtonSize)
+                .colors(LCARSRenderer.BLUE, LCARSRenderer.LAVENDER)
+                .build());
+
+        // Z forward button [>] - increase Z slice (right column, bottom)
+        addRenderableWidget(LCARSButton.lcarsBuilder(
+                Component.literal(">"),
+                button -> {
+                    if (currentZSlice == SHOW_ALL) {
+                        currentZSlice = 0;
+                    } else if (currentZSlice == 9) {
+                        currentZSlice = SHOW_ALL;
+                    } else {
+                        currentZSlice++;
+                    }
+                }
+        ).bounds(navX + navButtonSize + colGap, navStartY + navButtonSize + 2, navButtonSize, navButtonSize)
+                .colors(LCARSRenderer.BLUE, LCARSRenderer.LAVENDER)
                 .build());
 
         // Back button - positioned in the blue bottom bar
@@ -464,28 +537,37 @@ public class TricorderScreen extends Screen {
             render3DBlockScene(g, centerX, centerY, scanBlocks);
         }
 
-        // Draw Y-LVL label above the buttons with a line underneath
+        // Draw combined YZ-LVL label above both button columns
         int navButtonSize = 16;
         int navX = panelLeft + 8;
         int navStartY = panelTop + 70;
+        int colGap = 6;
 
-        // Y-LVL label above buttons (no shadow)
-        String yLvlLabel = "Y-LVL";
-        int yLvlLabelX = navX - 2;
-        int yLvlLabelY = navStartY - 14;
-        g.drawString(this.font, yLvlLabel, yLvlLabelX, yLvlLabelY, LCARSRenderer.TEXT_DARK, false);
+        // Combined YZ-LVL label spanning both columns
+        String yzLabel = "YZ-LVL";
+        int yzLabelX = navX - 4;
+        int yzLabelY = navStartY - 14;
+        g.drawString(this.font, yzLabel, yzLabelX, yzLabelY, LCARSRenderer.TEXT_DARK, false);
+        // Line under label
+        g.fill(yzLabelX, navStartY - 4, yzLabelX + this.font.width(yzLabel), navStartY - 3, LCARSRenderer.TEXT_DARK);
 
-        // Line underneath the label
-        int lineY = navStartY - 4;
-        int lineWidth = this.font.width(yLvlLabel) + 4;
-        g.fill(yLvlLabelX, lineY, yLvlLabelX + lineWidth, lineY + 1, LCARSRenderer.TEXT_DARK);
+        // Y value below left column buttons (black for readability)
+        // Display player-relative Y: 0 = feet level, positive above, negative below
+        String yVal;
+        if (currentLayer == SHOW_ALL) {
+            yVal = "ALL";
+        } else {
+            int relativeY = currentLayer - FEET_LEVEL_LAYER;
+            yVal = (relativeY > 0 ? "+" : "") + relativeY;  // Show + sign for positive only
+        }
+        int yValY = navStartY + (navButtonSize + 2) * 2 + 2;
+        g.drawString(this.font, yVal, navX, yValY, LCARSRenderer.TEXT_DARK, false);
 
-        // Draw layer indicator to the right of the up/down buttons
-        String layerIndicator = currentLayer == SHOW_ALL ? "ALL" : String.valueOf(currentLayer);
-        // Position to the right of buttons, vertically centered between them
-        int indicatorX = navX + navButtonSize + 3;  // Right of buttons
-        int indicatorY = navStartY + navButtonSize - 2;  // Centered vertically
-        g.drawString(this.font, layerIndicator, indicatorX, indicatorY, LCARSRenderer.LAVENDER, false);
+        // Z value below right column buttons (black for readability)
+        // Display 1-based Z: 1 = closest to player, 10 = farthest
+        int zColX = navX + navButtonSize + colGap;
+        String zVal = currentZSlice == SHOW_ALL ? "ALL" : String.valueOf(currentZSlice + 1);
+        g.drawString(this.font, zVal, zColX, yValY, LCARSRenderer.TEXT_DARK, false);
 
         // Draw direction indicator in the bottom area
         int[] bottomBarBounds = LCARSRenderer.getBottomBarBounds(panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT);
@@ -709,10 +791,15 @@ public class TricorderScreen extends Screen {
 
         // Render scanned blocks
         for (ScanResultPayload.ScannedBlock block : sorted) {
-            // Skip blocks not on current layer when filtering
-            boolean isActiveLayer = (currentLayer == SHOW_ALL || block.y() == currentLayer);
-            if (!isActiveLayer && currentLayer != SHOW_ALL) {
-                // Skip ghost blocks for now
+            // Transform coordinates to check against filters
+            int[] transformed = transformScanCoords(block.x(), block.y(), block.z());
+
+            // Skip blocks not on current Y layer when filtering
+            boolean isActiveLayer = (currentLayer == SHOW_ALL || transformed[1] == currentLayer);
+            // Skip blocks not on current Z slice when filtering
+            boolean isActiveZSlice = (currentZSlice == SHOW_ALL || transformed[2] == currentZSlice);
+
+            if (!isActiveLayer || !isActiveZSlice) {
                 continue;
             }
 
@@ -721,11 +808,9 @@ public class TricorderScreen extends Screen {
                 net.minecraft.world.level.block.Block mcBlock = BuiltInRegistries.BLOCK.get(blockLoc);
                 BlockState blockState = mcBlock.defaultBlockState();
 
-                // Transform coordinates based on scan facing direction
-                int[] transformed = transformScanCoords(block.x(), block.y(), block.z());
-
                 // Position at the block's location (centered around origin)
                 // Blocks are at positions 0-9, center at 4.5
+                // Use already-transformed coordinates from above
                 float bx = transformed[0] - 4.5f;
                 float by = transformed[1] - 4.5f;
                 float bz = transformed[2] - 4.5f;
@@ -779,14 +864,23 @@ public class TricorderScreen extends Screen {
         // Render scanned entities (mobs)
         if (scanEntities != null && !scanEntities.isEmpty()) {
             for (ScanResultPayload.ScannedEntity scannedEntity : scanEntities) {
-                // Check layer filtering - convert entity Y to layer (0-9)
-                int entityLayer = (int) scannedEntity.y();
+                // Transform coordinates based on scan facing direction
+                float[] transformedEntity = transformScanCoords(scannedEntity.x(), scannedEntity.y(), scannedEntity.z());
+
+                // Check Y layer filtering - convert entity Y to layer (0-9)
+                int entityLayer = (int) transformedEntity[1];
                 if (entityLayer < 0) entityLayer = 0;
                 if (entityLayer > 9) entityLayer = 9;
 
+                // Check Z slice filtering - convert entity Z to slice (0-9)
+                int entityZSlice = (int) transformedEntity[2];
+                if (entityZSlice < 0) entityZSlice = 0;
+                if (entityZSlice > 9) entityZSlice = 9;
+
                 boolean isActiveLayer = (currentLayer == SHOW_ALL || entityLayer == currentLayer);
-                if (!isActiveLayer) {
-                    continue;  // Skip entities not on current layer
+                boolean isActiveZSlice = (currentZSlice == SHOW_ALL || entityZSlice == currentZSlice);
+                if (!isActiveLayer || !isActiveZSlice) {
+                    continue;  // Skip entities not on current layer or Z slice
                 }
 
                 try {
@@ -796,13 +890,11 @@ public class TricorderScreen extends Screen {
                     Entity entity = entityType.create(mc.level);
 
                     if (entity != null) {
-                        // Transform coordinates based on scan facing direction
-                        float[] transformed = transformScanCoords(scannedEntity.x(), scannedEntity.y(), scannedEntity.z());
-
                         // Position in scan area (centered coords)
-                        float ex = transformed[0] - 4.5f;
-                        float ey = transformed[1] - 4.5f;
-                        float ez = transformed[2] - 4.5f;
+                        // Use already-transformed coordinates from above
+                        float ex = transformedEntity[0] - 4.5f;
+                        float ey = transformedEntity[1] - 4.5f;
+                        float ez = transformedEntity[2] - 4.5f;
 
                         poseStack.pushPose();
                         // Position entity in scene
@@ -900,6 +992,18 @@ public class TricorderScreen extends Screen {
             draw3DLine(g, poseStack, min, layerY, max, max, layerY, max, layerColor);
             draw3DLine(g, poseStack, min, layerY, min, min, layerY, max, layerColor);
             draw3DLine(g, poseStack, max, layerY, min, max, layerY, max, layerColor);
+        }
+
+        // Draw vertical grid lines at the current Z slice if viewing a specific slice
+        if (currentZSlice != SHOW_ALL) {
+            float sliceZ = currentZSlice - 4.5f;
+            int sliceColor = 0x6000CCFF;  // Cyan/teal highlight
+
+            // Draw a vertical plane (X-Y plane) at the current Z slice
+            draw3DLine(g, poseStack, min, min, sliceZ, max, min, sliceZ, sliceColor);
+            draw3DLine(g, poseStack, min, max, sliceZ, max, max, sliceZ, sliceColor);
+            draw3DLine(g, poseStack, min, min, sliceZ, min, max, sliceZ, sliceColor);
+            draw3DLine(g, poseStack, max, min, sliceZ, max, max, sliceZ, sliceColor);
         }
     }
 
