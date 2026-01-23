@@ -8,7 +8,10 @@
   "block.trekcraft.latinum_bar": "Latinum Bar",
   "block.trekcraft.transporter_pad": "Transporter Pad",
   "block.trekcraft.transporter_room": "Transporter Room",
+  "block.trekcraft.wormhole_portal": "Wormhole Portal",
 
   "container.trekcraft.transporter_room": "Transporter Room",
-  "screen.trekcraft.tricorder": "Tricorder"
+  "screen.trekcraft.tricorder": "Tricorder",
+  "screen.trekcraft.naming": "Name",
+  "screen.trekcraft.wormhole_link": "Link Wormhole"
 }

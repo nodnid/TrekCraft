@@ -3,6 +3,7 @@ package com.csquared.trekcraft.registry;
 import com.csquared.trekcraft.TrekCraftMod;
 import com.csquared.trekcraft.content.block.TransporterPadBlock;
 import com.csquared.trekcraft.content.block.TransporterRoomBlock;
+import com.csquared.trekcraft.content.block.WormholePortalBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
@@ -40,6 +41,18 @@ public class ModBlocks {
                     .strength(4.0f, 6.0f)
                     .sound(SoundType.METAL)
                     .requiresCorrectToolForDrops()
+                    .noOcclusion()
+            )
+    );
+
+    // Wormhole Portal - hidden teleportation portal
+    public static final DeferredBlock<WormholePortalBlock> WORMHOLE_PORTAL = BLOCKS.register(
+            "wormhole_portal",
+            () -> new WormholePortalBlock(BlockBehaviour.Properties.of()
+                    .strength(-1.0f, 3600000.0f) // Unbreakable like bedrock
+                    .noCollission()
+                    .lightLevel(state -> 11)
+                    .noLootTable()
                     .noOcclusion()
             )
     );

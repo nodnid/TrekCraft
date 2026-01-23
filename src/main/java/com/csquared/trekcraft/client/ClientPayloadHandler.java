@@ -1,6 +1,8 @@
 package com.csquared.trekcraft.client;
 
+import com.csquared.trekcraft.client.screen.NamingScreen;
 import com.csquared.trekcraft.client.screen.TricorderScreen;
+import com.csquared.trekcraft.network.OpenNamingScreenPayload;
 import com.csquared.trekcraft.network.OpenTricorderScreenPayload;
 import com.csquared.trekcraft.network.ScanResultPayload;
 import net.minecraft.client.Minecraft;
@@ -54,6 +56,42 @@ public class ClientPayloadHandler {
             // Open TricorderScreen in scan results mode
             Minecraft.getInstance().setScreen(
                     TricorderScreen.createForScanResults(payload.facing(), payload.blocks(), payload.entities())
+            );
+        });
+    }
+
+    public static void openNamingScreen(OpenNamingScreenPayload payload) {
+        Minecraft.getInstance().execute(() -> {
+            switch (payload.getNamingType()) {
+                case TRICORDER -> {
+                    if (payload.getTricorderId() != null) {
+                        Minecraft.getInstance().setScreen(
+                                NamingScreen.forTricorder(payload.getTricorderId(), payload.defaultName())
+                        );
+                    }
+                }
+                case PAD -> {
+                    if (payload.getPadPos() != null) {
+                        Minecraft.getInstance().setScreen(
+                                NamingScreen.forPad(payload.getPadPos(), payload.defaultName())
+                        );
+                    }
+                }
+                case WORMHOLE -> {
+                    if (payload.getWormholeId() != null) {
+                        Minecraft.getInstance().setScreen(
+                                NamingScreen.forWormhole(payload.getWormholeId(), payload.defaultName())
+                        );
+                    }
+                }
+            }
+        });
+    }
+
+    public static void openWormholeLinkScreen(com.csquared.trekcraft.network.OpenWormholeLinkScreenPayload payload) {
+        Minecraft.getInstance().execute(() -> {
+            Minecraft.getInstance().setScreen(
+                    new com.csquared.trekcraft.client.screen.WormholeLinkScreen(payload)
             );
         });
     }

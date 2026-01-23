@@ -3,6 +3,7 @@ package com.csquared.trekcraft.registry;
 import com.csquared.trekcraft.TrekCraftMod;
 import com.csquared.trekcraft.content.blockentity.TransporterPadBlockEntity;
 import com.csquared.trekcraft.content.blockentity.TransporterRoomBlockEntity;
+import com.csquared.trekcraft.content.blockentity.WormholePortalBlockEntity;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.neoforged.bus.api.IEventBus;
@@ -27,6 +28,14 @@ public class ModBlockEntities {
                     () -> BlockEntityType.Builder.of(
                             TransporterRoomBlockEntity::new,
                             ModBlocks.TRANSPORTER_ROOM.get()
+                    ).build(null)
+            );
+
+    public static final Supplier<BlockEntityType<WormholePortalBlockEntity>> WORMHOLE_PORTAL =
+            BLOCK_ENTITIES.register("wormhole_portal",
+                    () -> BlockEntityType.Builder.of(
+                            WormholePortalBlockEntity::new,
+                            ModBlocks.WORMHOLE_PORTAL.get()
                     ).build(null)
             );
 

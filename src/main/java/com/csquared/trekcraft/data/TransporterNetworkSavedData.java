@@ -2,6 +2,7 @@ package com.csquared.trekcraft.data;
 
 import com.csquared.trekcraft.TrekCraftMod;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -24,6 +25,9 @@ public class TransporterNetworkSavedData extends SavedData {
 
     // Tricorder signals (both held and dropped)
     private final Map<UUID, SignalRecord> signals = new HashMap<>();
+
+    // Wormhole portals
+    private final Map<UUID, WormholeRecord> wormholes = new HashMap<>();
 
     public TransporterNetworkSavedData() {
     }
@@ -107,6 +111,30 @@ public class TransporterNetworkSavedData extends SavedData {
             data.signals.put(tricorderId, new SignalRecord(tricorderId, displayName, pos, lastSeen, type, holderId));
         }
 
+        // Load wormholes
+        if (tag.contains("Wormholes", Tag.TAG_LIST)) {
+            ListTag wormholesTag = tag.getList("Wormholes", Tag.TAG_COMPOUND);
+            for (int i = 0; i < wormholesTag.size(); i++) {
+                CompoundTag wormholeTag = wormholesTag.getCompound(i);
+                UUID portalId = wormholeTag.getUUID("PortalId");
+                String name = wormholeTag.getString("Name");
+                int[] anchorArray = wormholeTag.getIntArray("AnchorPos");
+                BlockPos anchorPos = anchorArray.length == 3 ?
+                        new BlockPos(anchorArray[0], anchorArray[1], anchorArray[2]) : BlockPos.ZERO;
+                Direction.Axis axis = Direction.Axis.valueOf(wormholeTag.getString("Axis"));
+                int width = wormholeTag.getInt("Width");
+                int height = wormholeTag.getInt("Height");
+                UUID linkedPortalId = wormholeTag.contains("LinkedPortalId") ?
+                        wormholeTag.getUUID("LinkedPortalId") : null;
+                long createdTime = wormholeTag.getLong("CreatedTime");
+                String dimensionKey = wormholeTag.getString("DimensionKey");
+
+                data.wormholes.put(portalId, new WormholeRecord(
+                        portalId, name, anchorPos, axis, width, height, linkedPortalId, createdTime, dimensionKey
+                ));
+            }
+        }
+
         return data;
     }
 
@@ -153,6 +181,29 @@ public class TransporterNetworkSavedData extends SavedData {
             signalsTag.add(signalTag);
         }
         tag.put("Signals", signalsTag);
+
+        // Save wormholes
+        ListTag wormholesTag = new ListTag();
+        for (WormholeRecord wormhole : wormholes.values()) {
+            CompoundTag wormholeTag = new CompoundTag();
+            wormholeTag.putUUID("PortalId", wormhole.portalId());
+            wormholeTag.putString("Name", wormhole.name());
+            wormholeTag.putIntArray("AnchorPos", new int[]{
+                    wormhole.anchorPos().getX(),
+                    wormhole.anchorPos().getY(),
+                    wormhole.anchorPos().getZ()
+            });
+            wormholeTag.putString("Axis", wormhole.axis().name());
+            wormholeTag.putInt("Width", wormhole.width());
+            wormholeTag.putInt("Height", wormhole.height());
+            if (wormhole.linkedPortalId() != null) {
+                wormholeTag.putUUID("LinkedPortalId", wormhole.linkedPortalId());
+            }
+            wormholeTag.putLong("CreatedTime", wormhole.createdTime());
+            wormholeTag.putString("DimensionKey", wormhole.dimensionKey());
+            wormholesTag.add(wormholeTag);
+        }
+        tag.put("Wormholes", wormholesTag);
 
         return tag;
     }
@@ -299,6 +350,73 @@ public class TransporterNetworkSavedData extends SavedData {
 
     public Optional<SignalRecord> getSignal(UUID tricorderId) {
         return Optional.ofNullable(signals.get(tricorderId));
+    }
+
+    // ===== Wormhole methods =====
+
+    /**
+     * Register a new wormhole portal.
+     */
+    public void registerWormhole(WormholeRecord wormhole) {
+        wormholes.put(wormhole.portalId(), wormhole);
+        setDirty();
+    }
+
+    /**
+     * Unregister a wormhole portal.
+     */
+    public void unregisterWormhole(UUID portalId) {
+        wormholes.remove(portalId);
+        setDirty();
+    }
+
+    /**
+     * Get a wormhole by its ID.
+     */
+    public Optional<WormholeRecord> getWormhole(UUID portalId) {
+        return Optional.ofNullable(wormholes.get(portalId));
+    }
+
+    /**
+     * Get all wormholes.
+     */
+    public Map<UUID, WormholeRecord> getWormholes() {
+        return Collections.unmodifiableMap(wormholes);
+    }
+
+    /**
+     * Get all unlinked wormholes in the specified dimension (excludes the given portal).
+     */
+    public List<WormholeRecord> getUnlinkedWormholes(String dimensionKey, UUID excludePortalId) {
+        List<WormholeRecord> unlinked = new ArrayList<>();
+        for (WormholeRecord wormhole : wormholes.values()) {
+            if (!wormhole.isLinked()
+                    && wormhole.dimensionKey().equals(dimensionKey)
+                    && !wormhole.portalId().equals(excludePortalId)) {
+                unlinked.add(wormhole);
+            }
+        }
+        return unlinked;
+    }
+
+    /**
+     * Update a wormhole record (e.g., after linking or renaming).
+     */
+    public void updateWormhole(WormholeRecord wormhole) {
+        wormholes.put(wormhole.portalId(), wormhole);
+        setDirty();
+    }
+
+    /**
+     * Find a wormhole by its anchor position.
+     */
+    public Optional<WormholeRecord> getWormholeByAnchor(BlockPos anchorPos) {
+        for (WormholeRecord wormhole : wormholes.values()) {
+            if (wormhole.anchorPos().equals(anchorPos)) {
+                return Optional.of(wormhole);
+            }
+        }
+        return Optional.empty();
     }
 
     // ===== Record types =====

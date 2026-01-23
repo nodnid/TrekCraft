@@ -3,21 +3,22 @@ package com.csquared.trekcraft.content.item;
 import com.csquared.trekcraft.data.TransporterNetworkSavedData;
 import com.csquared.trekcraft.data.TransporterNetworkSavedData.SignalType;
 import com.csquared.trekcraft.data.TricorderData;
+import com.csquared.trekcraft.network.OpenNamingScreenPayload;
 import com.csquared.trekcraft.network.OpenTricorderScreenPayload;
 import com.csquared.trekcraft.registry.ModDataComponents;
 import com.csquared.trekcraft.registry.ModItems;
-import net.minecraft.ChatFormatting;
-import net.minecraft.network.chat.ClickEvent;
+import com.csquared.trekcraft.service.WormholeService;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.network.PacketDistributor;
 
@@ -28,6 +29,54 @@ public class TricorderItem extends Item {
 
     public TricorderItem(Properties properties) {
         super(properties);
+    }
+
+    @Override
+    public InteractionResult useOn(UseOnContext context) {
+        Level level = context.getLevel();
+        Player player = context.getPlayer();
+        ItemStack stack = context.getItemInHand();
+
+        if (player == null) {
+            return InteractionResult.PASS;
+        }
+
+        // Ensure tricorder has data
+        ensureTricorderData(stack);
+        TricorderData tricorderData = stack.get(ModDataComponents.TRICORDER_DATA.get());
+
+        // Check if tricorder is named "Cleo" (case-insensitive) AND clicking cobblestone
+        if (tricorderData != null && tricorderData.label().filter(l -> "Cleo".equalsIgnoreCase(l)).isPresent()) {
+            // Only process on server side, and only for cobblestone
+            if (!level.isClientSide && player instanceof ServerPlayer serverPlayer) {
+                WormholeService.ActivationAttempt attempt = WormholeService.tryActivate(player, context.getClickedPos());
+
+                switch (attempt.result()) {
+                    case SUCCESS -> {
+                        String defaultName = "Wormhole-" + attempt.portalId().toString().substring(0, 4).toUpperCase();
+                        PacketDistributor.sendToPlayer(serverPlayer,
+                                OpenNamingScreenPayload.forWormhole(attempt.portalId(), defaultName));
+                        return InteractionResult.SUCCESS;
+                    }
+                    case INVALID_FRAME -> {
+                        player.displayClientMessage(
+                                Component.literal("Invalid wormhole frame. Build a rectangular cobblestone frame with air inside."), true);
+                        return InteractionResult.FAIL;
+                    }
+                    case PORTAL_EXISTS_HERE -> {
+                        player.displayClientMessage(
+                                Component.literal("A wormhole portal already exists here."), true);
+                        return InteractionResult.FAIL;
+                    }
+                    case NOT_COBBLESTONE -> {
+                        // Fall through to normal use - return PASS
+                    }
+                }
+            }
+        }
+
+        // Not a Cleo tricorder, or not clicking cobblestone - fall through to normal use
+        return InteractionResult.PASS;
     }
 
     @Override
@@ -42,8 +91,10 @@ public class TricorderItem extends Item {
 
             // Check if tricorder needs naming
             if (tricorderData != null && tricorderData.label().isEmpty()) {
-                // Show naming prompt
-                sendNamingPrompt(serverPlayer, tricorderData);
+                // Open naming screen
+                String defaultName = "Tricorder-" + tricorderData.tricorderId().toString().substring(0, 4).toUpperCase();
+                PacketDistributor.sendToPlayer(serverPlayer,
+                        OpenNamingScreenPayload.forTricorder(tricorderData.tricorderId(), defaultName));
                 return InteractionResultHolder.success(stack);
             }
 
@@ -87,32 +138,6 @@ public class TricorderItem extends Item {
         }
 
         return InteractionResultHolder.sidedSuccess(stack, level.isClientSide);
-    }
-
-    private void sendNamingPrompt(ServerPlayer player, TricorderData data) {
-        String defaultName = "Tricorder-" + data.tricorderId().toString().substring(0, 4).toUpperCase();
-
-        player.sendSystemMessage(Component.literal(""));
-        player.sendSystemMessage(Component.literal("=== TRICORDER INITIALIZATION ===")
-                .withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));
-        player.sendSystemMessage(Component.literal("This tricorder needs a name before use.")
-                .withStyle(ChatFormatting.WHITE));
-        player.sendSystemMessage(Component.literal("To name it, hold it and use: ")
-                .withStyle(ChatFormatting.GRAY)
-                .append(Component.literal("/trek tricorder name <your name>")
-                        .withStyle(ChatFormatting.AQUA)));
-        player.sendSystemMessage(Component.literal(""));
-        player.sendSystemMessage(
-                Component.literal("[Use Default: " + defaultName + "]")
-                        .withStyle(style -> style
-                                .withColor(ChatFormatting.GREEN)
-                                .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND,
-                                        "/trek tricorder name " + defaultName))
-                                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-                                        Component.literal("Click to use default name"))))
-        );
-        player.sendSystemMessage(Component.literal("================================")
-                .withStyle(ChatFormatting.GOLD));
     }
 
     @Override

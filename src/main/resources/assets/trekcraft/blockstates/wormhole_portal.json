@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "axis=x": {
+      "model": "trekcraft:block/wormhole_portal_ns"
+    },
+    "axis=z": {
+      "model": "trekcraft:block/wormhole_portal_ew"
+    }
+  }
+}

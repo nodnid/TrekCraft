@@ -2,12 +2,14 @@ package com.csquared.trekcraft.content.block;
 
 import com.csquared.trekcraft.content.blockentity.TransporterPadBlockEntity;
 import com.csquared.trekcraft.data.TransporterNetworkSavedData;
+import com.csquared.trekcraft.network.OpenNamingScreenPayload;
 import com.csquared.trekcraft.registry.ModBlockEntities;
 import com.mojang.serialization.MapCodec;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.LivingEntity;
@@ -24,6 +26,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.VoxelShape;
+import net.neoforged.neoforge.network.PacketDistributor;
 import org.jetbrains.annotations.Nullable;
 
 public class TransporterPadBlock extends BaseEntityBlock {
@@ -64,17 +67,24 @@ public class TransporterPadBlock extends BaseEntityBlock {
         if (!level.isClientSide && level instanceof ServerLevel serverLevel) {
             BlockEntity be = level.getBlockEntity(pos);
             if (be instanceof TransporterPadBlockEntity padBE) {
-                // Use item's custom name if it has one
+                // Use item's custom name if it has one (e.g., renamed in anvil)
                 Component customName = stack.get(DataComponents.CUSTOM_NAME);
                 if (customName != null) {
+                    // Use the anvil name directly, no naming screen
                     padBE.setPadName(customName.getString());
+                    TransporterNetworkSavedData.get(serverLevel).registerPad(pos, padBE.getPadName());
                 } else {
-                    // Default name based on position
-                    padBE.setPadName("Pad " + pos.getX() + "," + pos.getY() + "," + pos.getZ());
-                }
+                    // Set temporary default name and open naming screen
+                    String defaultName = "Pad " + pos.getX() + "," + pos.getY() + "," + pos.getZ();
+                    padBE.setPadName(defaultName);
+                    TransporterNetworkSavedData.get(serverLevel).registerPad(pos, defaultName);
 
-                // Register in SavedData
-                TransporterNetworkSavedData.get(serverLevel).registerPad(pos, padBE.getPadName());
+                    // Send packet to open naming screen
+                    if (placer instanceof ServerPlayer serverPlayer) {
+                        PacketDistributor.sendToPlayer(serverPlayer,
+                                OpenNamingScreenPayload.forPad(pos, defaultName));
+                    }
+                }
             }
         }
     }

@@ -1,6 +1,18 @@
 package com.csquared.trekcraft.network;
 
 import com.csquared.trekcraft.TrekCraftMod;
+import com.csquared.trekcraft.content.blockentity.TransporterPadBlockEntity;
+import com.csquared.trekcraft.data.TransporterNetworkSavedData;
+import com.csquared.trekcraft.data.TricorderData;
+import com.csquared.trekcraft.registry.ModDataComponents;
+import com.csquared.trekcraft.registry.ModItems;
+import com.csquared.trekcraft.service.WormholeService;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.loading.FMLEnvironment;
@@ -35,6 +47,64 @@ public class ModPayloads {
                     }
                 }
         );
+
+        // Naming screen payloads
+        registrar.playToClient(
+                OpenNamingScreenPayload.TYPE,
+                OpenNamingScreenPayload.STREAM_CODEC,
+                (payload, context) -> {
+                    if (FMLEnvironment.dist == Dist.CLIENT) {
+                        handleOpenNamingScreenOnClient(payload);
+                    }
+                }
+        );
+
+        registrar.playToServer(
+                SetTricorderNamePayload.TYPE,
+                SetTricorderNamePayload.STREAM_CODEC,
+                (payload, context) -> {
+                    ServerPlayer player = (ServerPlayer) context.player();
+                    handleSetTricorderName(player, payload);
+                }
+        );
+
+        registrar.playToServer(
+                SetPadNamePayload.TYPE,
+                SetPadNamePayload.STREAM_CODEC,
+                (payload, context) -> {
+                    ServerPlayer player = (ServerPlayer) context.player();
+                    handleSetPadName(player, payload);
+                }
+        );
+
+        // Wormhole payloads
+        registrar.playToServer(
+                SetWormholeNamePayload.TYPE,
+                SetWormholeNamePayload.STREAM_CODEC,
+                (payload, context) -> {
+                    ServerPlayer player = (ServerPlayer) context.player();
+                    handleSetWormholeName(player, payload);
+                }
+        );
+
+        registrar.playToClient(
+                OpenWormholeLinkScreenPayload.TYPE,
+                OpenWormholeLinkScreenPayload.STREAM_CODEC,
+                (payload, context) -> {
+                    if (FMLEnvironment.dist == Dist.CLIENT) {
+                        handleOpenWormholeLinkScreenOnClient(payload);
+                    }
+                }
+        );
+
+        registrar.playToServer(
+                LinkWormholesPayload.TYPE,
+                LinkWormholesPayload.STREAM_CODEC,
+                (payload, context) -> {
+                    ServerPlayer player = (ServerPlayer) context.player();
+                    handleLinkWormholes(player, payload);
+                }
+        );
     }
 
     // This method uses a fully qualified class name string to defer class loading
@@ -53,6 +123,113 @@ public class ModPayloads {
             handlerClass.getMethod("handleScanResult", ScanResultPayload.class).invoke(null, payload);
         } catch (Exception e) {
             TrekCraftMod.LOGGER.error("Failed to handle scan result", e);
+        }
+    }
+
+    private static void handleOpenNamingScreenOnClient(OpenNamingScreenPayload payload) {
+        try {
+            Class<?> handlerClass = Class.forName("com.csquared.trekcraft.client.ClientPayloadHandler");
+            handlerClass.getMethod("openNamingScreen", OpenNamingScreenPayload.class).invoke(null, payload);
+        } catch (Exception e) {
+            TrekCraftMod.LOGGER.error("Failed to open naming screen", e);
+        }
+    }
+
+    private static void handleSetTricorderName(ServerPlayer player, SetTricorderNamePayload payload) {
+        // Search player inventory for tricorder with matching UUID
+        for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+            ItemStack stack = player.getInventory().getItem(i);
+            if (stack.is(ModItems.TRICORDER.get())) {
+                TricorderData data = stack.get(ModDataComponents.TRICORDER_DATA.get());
+                if (data != null && data.tricorderId().equals(payload.tricorderId())) {
+                    // Update TricorderData with new label
+                    stack.set(ModDataComponents.TRICORDER_DATA.get(), data.withLabel(payload.name()));
+
+                    // Update CUSTOM_NAME component for display
+                    stack.set(DataComponents.CUSTOM_NAME, Component.literal(payload.name()));
+
+                    // Update signal registry if this tricorder is tracked
+                    ServerLevel serverLevel = player.serverLevel();
+                    TransporterNetworkSavedData savedData = TransporterNetworkSavedData.get(serverLevel);
+                    savedData.getSignal(payload.tricorderId()).ifPresent(signal -> {
+                        // Re-register with updated name
+                        if (signal.type() == TransporterNetworkSavedData.SignalType.HELD) {
+                            savedData.registerHeldSignal(
+                                    payload.tricorderId(),
+                                    payload.name(),
+                                    signal.lastKnownPos(),
+                                    serverLevel.getGameTime(),
+                                    signal.holderId()
+                            );
+                        } else {
+                            savedData.registerDroppedSignal(
+                                    payload.tricorderId(),
+                                    payload.name(),
+                                    signal.lastKnownPos(),
+                                    serverLevel.getGameTime()
+                            );
+                        }
+                    });
+
+                    player.displayClientMessage(
+                            Component.literal("Tricorder named: " + payload.name()), true);
+                    return;
+                }
+            }
+        }
+    }
+
+    private static void handleSetPadName(ServerPlayer player, SetPadNamePayload payload) {
+        ServerLevel level = player.serverLevel();
+
+        // Validate player is within reasonable distance (anti-cheat)
+        double distSq = player.blockPosition().distSqr(payload.padPos());
+        if (distSq > 256) { // 16 blocks max
+            TrekCraftMod.LOGGER.warn("Player {} tried to rename pad too far away", player.getName().getString());
+            return;
+        }
+
+        BlockEntity be = level.getBlockEntity(payload.padPos());
+        if (be instanceof TransporterPadBlockEntity padBE) {
+            padBE.setPadName(payload.name());
+            TransporterNetworkSavedData.get(level).registerPad(payload.padPos(), payload.name());
+
+            player.displayClientMessage(
+                    Component.literal("Transporter pad named: " + payload.name()), true);
+        }
+    }
+
+    private static void handleOpenWormholeLinkScreenOnClient(OpenWormholeLinkScreenPayload payload) {
+        try {
+            Class<?> handlerClass = Class.forName("com.csquared.trekcraft.client.ClientPayloadHandler");
+            handlerClass.getMethod("openWormholeLinkScreen", OpenWormholeLinkScreenPayload.class).invoke(null, payload);
+        } catch (Exception e) {
+            TrekCraftMod.LOGGER.error("Failed to open wormhole link screen", e);
+        }
+    }
+
+    private static void handleSetWormholeName(ServerPlayer player, SetWormholeNamePayload payload) {
+        ServerLevel level = player.serverLevel();
+        WormholeService.renameWormhole(level, payload.portalId(), payload.name());
+        player.displayClientMessage(
+                Component.literal("Wormhole named: " + payload.name()), true);
+    }
+
+    private static void handleLinkWormholes(ServerPlayer player, LinkWormholesPayload payload) {
+        ServerLevel level = player.serverLevel();
+        boolean success = WormholeService.linkPortals(level, payload.getPortal1Id(), payload.getPortal2Id());
+
+        if (success) {
+            TransporterNetworkSavedData data = TransporterNetworkSavedData.get(level);
+            String name1 = data.getWormhole(payload.getPortal1Id())
+                    .map(w -> w.name()).orElse("Unknown");
+            String name2 = data.getWormhole(payload.getPortal2Id())
+                    .map(w -> w.name()).orElse("Unknown");
+            player.displayClientMessage(
+                    Component.literal("Linked wormholes: " + name1 + " <-> " + name2), true);
+        } else {
+            player.displayClientMessage(
+                    Component.literal("Failed to link wormholes"), true);
         }
     }
 }
