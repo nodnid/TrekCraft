@@ -947,9 +947,9 @@ public class TricorderScreen extends Screen {
      * Draws faint XYZ gridlines for the 10x10x10 scan area.
      */
     private void draw3DGridlines(GuiGraphics g, PoseStack poseStack) {
-        // Grid bounds in centered coordinates (-4.5 to 4.5, but we draw at -5 to 5 for full cube)
-        float min = -5.0f;
-        float max = 5.0f;
+        // Grid bounds match actual block extents (blocks at -4.5 to +4.5 occupy -4.5 to +5.5)
+        float min = -4.5f;
+        float max = 5.5f;
 
         // Faint grid color
         int gridColor = 0x30FFFFFF;  // Semi-transparent white
