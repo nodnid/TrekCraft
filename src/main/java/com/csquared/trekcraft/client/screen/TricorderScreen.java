@@ -72,6 +72,10 @@ public class TricorderScreen extends Screen {
     private int panelLeft;
     private int panelTop;
 
+    // Scroll offsets for lists
+    private int padScrollOffset = 0;
+    private int signalScrollOffset = 0;
+
     private enum MenuState {
         MAIN_MENU,
         PAD_LIST,
@@ -226,29 +230,79 @@ public class TricorderScreen extends Screen {
 
         if (!pads.isEmpty()) {
             int maxVisible = 5;
-            int count = 0;
-            for (OpenTricorderScreenPayload.PadEntry pad : pads) {
-                if (count >= maxVisible) break;
+            int totalPads = pads.size();
+            boolean needsScroll = totalPads > maxVisible;
+
+            // Clamp scroll offset to valid range
+            int maxOffset = Math.max(0, totalPads - maxVisible);
+            padScrollOffset = Math.max(0, Math.min(padScrollOffset, maxOffset));
+
+            // Add scroll buttons in sidebar when scrolling is needed
+            if (needsScroll) {
+                int navButtonSize = 16;
+                int navX = panelLeft + 4;
+                int navStartY = panelTop + 70;
+
+                // Up button
+                addRenderableWidget(LCARSButton.lcarsBuilder(
+                        Component.literal("^"),
+                        button -> {
+                            if (padScrollOffset > 0) {
+                                padScrollOffset--;
+                                rebuildButtons();
+                            }
+                        }
+                ).bounds(navX, navStartY, navButtonSize, navButtonSize)
+                        .colors(LCARSRenderer.ORANGE, LCARSRenderer.LAVENDER)
+                        .build());
+
+                // Down button
+                addRenderableWidget(LCARSButton.lcarsBuilder(
+                        Component.literal("v"),
+                        button -> {
+                            if (padScrollOffset < maxOffset) {
+                                padScrollOffset++;
+                                rebuildButtons();
+                            }
+                        }
+                ).bounds(navX, navStartY + navButtonSize + 2, navButtonSize, navButtonSize)
+                        .colors(LCARSRenderer.ORANGE, LCARSRenderer.LAVENDER)
+                        .build());
+            }
+
+            // Display visible items based on scroll offset
+            int endIndex = Math.min(padScrollOffset + maxVisible, totalPads);
+            for (int i = padScrollOffset; i < endIndex; i++) {
+                OpenTricorderScreenPayload.PadEntry pad = pads.get(i);
                 BlockPos pos = pad.pos();
                 addRenderableWidget(LCARSButton.lcarsBuilder(
                         Component.literal(pad.name().toUpperCase()),
                         button -> executeCommand("trek transport toPad " + pos.getX() + " " + pos.getY() + " " + pos.getZ())
                 ).bounds(buttonX, buttonY, BUTTON_WIDTH, BUTTON_HEIGHT).build());
                 buttonY += BUTTON_HEIGHT + BUTTON_SPACING;
-                count++;
             }
         }
 
-        // Back button at bottom with different color
-        int backY = contentY + contentH - BUTTON_HEIGHT - 4;
+        // Back button - positioned in the blue bottom bar, right-aligned with main menu buttons
+        int[] bottomBarBounds = LCARSRenderer.getBottomBarBounds(panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT);
+        int bottomBarY = bottomBarBounds[1];
+        int bottomBarH = bottomBarBounds[3];
+        int backButtonWidth = 65;
+        int backButtonHeight = 15;
+        // Align right edge with main menu buttons: buttonX + BUTTON_WIDTH
+        int mainButtonRightEdge = contentX + (contentW + BUTTON_WIDTH) / 2;
+        int backX = mainButtonRightEdge - backButtonWidth;
+        int backY = bottomBarY + (bottomBarH - backButtonHeight) / 2 + 12;
         addRenderableWidget(LCARSButton.lcarsBuilder(
                 Component.literal("< BACK"),
                 button -> {
                     currentState = MenuState.MAIN_MENU;
+                    padScrollOffset = 0;  // Reset scroll when leaving
                     rebuildButtons();
                 }
-        ).bounds(buttonX, backY, BUTTON_WIDTH, BUTTON_HEIGHT)
+        ).bounds(backX, backY, backButtonWidth, backButtonHeight)
                 .colors(LCARSRenderer.BLUE, LCARSRenderer.LAVENDER)
+                .centerAligned()
                 .build());
     }
 
@@ -264,9 +318,50 @@ public class TricorderScreen extends Screen {
 
         if (!signals.isEmpty()) {
             int maxVisible = 5;
-            int count = 0;
-            for (OpenTricorderScreenPayload.SignalEntry signal : signals) {
-                if (count >= maxVisible) break;
+            int totalSignals = signals.size();
+            boolean needsScroll = totalSignals > maxVisible;
+
+            // Clamp scroll offset to valid range
+            int maxOffset = Math.max(0, totalSignals - maxVisible);
+            signalScrollOffset = Math.max(0, Math.min(signalScrollOffset, maxOffset));
+
+            // Add scroll buttons in sidebar when scrolling is needed
+            if (needsScroll) {
+                int navButtonSize = 16;
+                int navX = panelLeft + 4;
+                int navStartY = panelTop + 70;
+
+                // Up button
+                addRenderableWidget(LCARSButton.lcarsBuilder(
+                        Component.literal("^"),
+                        button -> {
+                            if (signalScrollOffset > 0) {
+                                signalScrollOffset--;
+                                rebuildButtons();
+                            }
+                        }
+                ).bounds(navX, navStartY, navButtonSize, navButtonSize)
+                        .colors(LCARSRenderer.ORANGE, LCARSRenderer.LAVENDER)
+                        .build());
+
+                // Down button
+                addRenderableWidget(LCARSButton.lcarsBuilder(
+                        Component.literal("v"),
+                        button -> {
+                            if (signalScrollOffset < maxOffset) {
+                                signalScrollOffset++;
+                                rebuildButtons();
+                            }
+                        }
+                ).bounds(navX, navStartY + navButtonSize + 2, navButtonSize, navButtonSize)
+                        .colors(LCARSRenderer.ORANGE, LCARSRenderer.LAVENDER)
+                        .build());
+            }
+
+            // Display visible items based on scroll offset
+            int endIndex = Math.min(signalScrollOffset + maxVisible, totalSignals);
+            for (int i = signalScrollOffset; i < endIndex; i++) {
+                OpenTricorderScreenPayload.SignalEntry signal = signals.get(i);
                 // Show type indicator in button text
                 String typePrefix = signal.type() == SignalType.HELD ? "[H] " : "[D] ";
                 addRenderableWidget(LCARSButton.lcarsBuilder(
@@ -274,20 +369,29 @@ public class TricorderScreen extends Screen {
                         button -> executeCommand("trek transport toSignal " + signal.tricorderId())
                 ).bounds(buttonX, buttonY, BUTTON_WIDTH, BUTTON_HEIGHT).build());
                 buttonY += BUTTON_HEIGHT + BUTTON_SPACING;
-                count++;
             }
         }
 
-        // Back button at bottom
-        int backY = contentY + contentH - BUTTON_HEIGHT - 4;
+        // Back button - positioned in the blue bottom bar, right-aligned with main menu buttons
+        int[] bottomBarBounds = LCARSRenderer.getBottomBarBounds(panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT);
+        int bottomBarY = bottomBarBounds[1];
+        int bottomBarH = bottomBarBounds[3];
+        int backButtonWidth = 65;
+        int backButtonHeight = 15;
+        // Align right edge with main menu buttons: buttonX + BUTTON_WIDTH
+        int mainButtonRightEdge = contentX + (contentW + BUTTON_WIDTH) / 2;
+        int backX = mainButtonRightEdge - backButtonWidth;
+        int backY = bottomBarY + (bottomBarH - backButtonHeight) / 2 + 12;
         addRenderableWidget(LCARSButton.lcarsBuilder(
                 Component.literal("< BACK"),
                 button -> {
                     currentState = MenuState.MAIN_MENU;
+                    signalScrollOffset = 0;  // Reset scroll when leaving
                     rebuildButtons();
                 }
-        ).bounds(buttonX, backY, BUTTON_WIDTH, BUTTON_HEIGHT)
+        ).bounds(backX, backY, backButtonWidth, backButtonHeight)
                 .colors(LCARSRenderer.BLUE, LCARSRenderer.LAVENDER)
+                .centerAligned()
                 .build());
     }
 
@@ -312,7 +416,7 @@ public class TricorderScreen extends Screen {
         //           0  ALL
         int navButtonSize = 16;  // Small square buttons
         int navX = panelLeft + 4;  // Left sidebar
-        int navStartY = panelTop + 70;  // Button row Y position
+        int navStartY = panelTop + 80;  // Button row Y position (lowered for spacing from top bar)
         int colGap = 6;  // Gap between Y and Z columns
 
         // Y up button [^] - increase layer (left column, top)
@@ -379,11 +483,13 @@ public class TricorderScreen extends Screen {
                 .colors(LCARSRenderer.BLUE, LCARSRenderer.LAVENDER)
                 .build());
 
-        // Back button - positioned in the blue bottom bar
-        int backButtonWidth = 65;  // Smaller width
-        int backButtonHeight = 14;  // Smaller height
-        int backX = bottomBarX + 80;  // Moved right
-        int backY = bottomBarY + (bottomBarH - backButtonHeight) / 2 + 14;  // Moved lower
+        // Back button - positioned in the blue bottom bar, right-aligned with main menu buttons
+        int backButtonWidth = 65;
+        int backButtonHeight = 15;
+        // Align right edge with main menu buttons: buttonX + BUTTON_WIDTH
+        int mainButtonRightEdge = contentX + (contentW + BUTTON_WIDTH) / 2;
+        int backX = mainButtonRightEdge - backButtonWidth;
+        int backY = bottomBarY + (bottomBarH - backButtonHeight) / 2 + 12;
         addRenderableWidget(LCARSButton.lcarsBuilder(
                 Component.literal("< BACK"),
                 button -> {
@@ -396,7 +502,8 @@ public class TricorderScreen extends Screen {
                     }
                 }
         ).bounds(backX, backY, backButtonWidth, backButtonHeight)
-                .colors(LCARSRenderer.LAVENDER, LCARSRenderer.BLUE)
+                .colors(LCARSRenderer.BLUE, LCARSRenderer.LAVENDER)
+                .centerAligned()
                 .build());
     }
 
@@ -465,6 +572,24 @@ public class TricorderScreen extends Screen {
             int legendWidth = this.font.width(legend);
             int legendY = contentY + contentH - BUTTON_HEIGHT - 18;
             guiGraphics.drawString(this.font, legend, contentX + (contentW - legendWidth) / 2, legendY, LCARSRenderer.LAVENDER);
+        }
+
+        // Draw scroll position indicators in sidebar
+        if (currentState == MenuState.PAD_LIST && pads.size() > 5) {
+            int navX = panelLeft + 4;
+            int navButtonSize = 16;
+            int navStartY = panelTop + 70;
+            int posY = navStartY + (navButtonSize + 2) * 2 + 2;
+            String posText = (padScrollOffset + 1) + "-" + Math.min(padScrollOffset + 5, pads.size()) + "/" + pads.size();
+            guiGraphics.drawString(this.font, posText, navX, posY, LCARSRenderer.TEXT_DARK, false);
+        }
+        if (currentState == MenuState.SIGNAL_LIST && signals.size() > 5) {
+            int navX = panelLeft + 4;
+            int navButtonSize = 16;
+            int navStartY = panelTop + 70;
+            int posY = navStartY + (navButtonSize + 2) * 2 + 2;
+            String posText = (signalScrollOffset + 1) + "-" + Math.min(signalScrollOffset + 5, signals.size()) + "/" + signals.size();
+            guiGraphics.drawString(this.font, posText, navX, posY, LCARSRenderer.TEXT_DARK, false);
         }
 
         // Draw currency info in the sidebar (only on main menu)
@@ -540,7 +665,7 @@ public class TricorderScreen extends Screen {
         // Draw combined YZ-LVL label above both button columns
         int navButtonSize = 16;
         int navX = panelLeft + 8;
-        int navStartY = panelTop + 70;
+        int navStartY = panelTop + 80;
         int colGap = 6;
 
         // Combined YZ-LVL label spanning both columns
@@ -1268,5 +1393,46 @@ public class TricorderScreen extends Screen {
             return true;
         }
         return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        // Handle scrolling in pad and signal lists
+        if (currentState == MenuState.PAD_LIST && pads.size() > 5) {
+            int maxOffset = pads.size() - 5;
+            if (scrollY > 0) {
+                // Scroll up
+                if (padScrollOffset > 0) {
+                    padScrollOffset--;
+                    rebuildButtons();
+                    return true;
+                }
+            } else if (scrollY < 0) {
+                // Scroll down
+                if (padScrollOffset < maxOffset) {
+                    padScrollOffset++;
+                    rebuildButtons();
+                    return true;
+                }
+            }
+        } else if (currentState == MenuState.SIGNAL_LIST && signals.size() > 5) {
+            int maxOffset = signals.size() - 5;
+            if (scrollY > 0) {
+                // Scroll up
+                if (signalScrollOffset > 0) {
+                    signalScrollOffset--;
+                    rebuildButtons();
+                    return true;
+                }
+            } else if (scrollY < 0) {
+                // Scroll down
+                if (signalScrollOffset < maxOffset) {
+                    signalScrollOffset++;
+                    rebuildButtons();
+                    return true;
+                }
+            }
+        }
+        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
     }
 }
