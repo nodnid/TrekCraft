@@ -1,13 +1,19 @@
 package com.csquared.trekcraft.content.item;
 
+import com.csquared.trekcraft.content.blockentity.WormholePortalBlockEntity;
 import com.csquared.trekcraft.data.TransporterNetworkSavedData;
 import com.csquared.trekcraft.data.TransporterNetworkSavedData.SignalType;
 import com.csquared.trekcraft.data.TricorderData;
+import com.csquared.trekcraft.data.WormholeRecord;
 import com.csquared.trekcraft.network.OpenNamingScreenPayload;
 import com.csquared.trekcraft.network.OpenTricorderScreenPayload;
+import com.csquared.trekcraft.network.OpenWormholeLinkScreenPayload;
+import com.csquared.trekcraft.registry.ModBlocks;
 import com.csquared.trekcraft.registry.ModDataComponents;
 import com.csquared.trekcraft.registry.ModItems;
 import com.csquared.trekcraft.service.WormholeService;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -36,6 +42,7 @@ public class TricorderItem extends Item {
         Level level = context.getLevel();
         Player player = context.getPlayer();
         ItemStack stack = context.getItemInHand();
+        BlockPos clickedPos = context.getClickedPos();
 
         if (player == null) {
             return InteractionResult.PASS;
@@ -45,37 +52,100 @@ public class TricorderItem extends Item {
         ensureTricorderData(stack);
         TricorderData tricorderData = stack.get(ModDataComponents.TRICORDER_DATA.get());
 
-        // Check if tricorder is named "Cleo" (case-insensitive) AND clicking cobblestone
-        if (tricorderData != null && tricorderData.label().filter(l -> "Cleo".equalsIgnoreCase(l)).isPresent()) {
-            // Only process on server side, and only for cobblestone
-            if (!level.isClientSide && player instanceof ServerPlayer serverPlayer) {
-                WormholeService.ActivationAttempt attempt = WormholeService.tryActivate(player, context.getClickedPos());
+        // Check if this is a Cleo tricorder
+        boolean isCleoTricorder = tricorderData != null &&
+                tricorderData.label().filter(l -> "Cleo".equalsIgnoreCase(l)).isPresent();
 
-                switch (attempt.result()) {
-                    case SUCCESS -> {
-                        String defaultName = "Wormhole-" + attempt.portalId().toString().substring(0, 4).toUpperCase();
-                        PacketDistributor.sendToPlayer(serverPlayer,
-                                OpenNamingScreenPayload.forWormhole(attempt.portalId(), defaultName));
-                        return InteractionResult.SUCCESS;
-                    }
-                    case INVALID_FRAME -> {
-                        player.displayClientMessage(
-                                Component.literal("Invalid wormhole frame. Build a rectangular cobblestone frame with air inside."), true);
-                        return InteractionResult.FAIL;
-                    }
-                    case PORTAL_EXISTS_HERE -> {
-                        player.displayClientMessage(
-                                Component.literal("A wormhole portal already exists here."), true);
-                        return InteractionResult.FAIL;
-                    }
-                    case NOT_COBBLESTONE -> {
-                        // Fall through to normal use - return PASS
+        // Handle clicking on wormhole portal (for linking/info)
+        if (level.getBlockState(clickedPos).is(ModBlocks.WORMHOLE_PORTAL.get())) {
+            if (isCleoTricorder && !level.isClientSide && level instanceof ServerLevel serverLevel
+                    && player instanceof ServerPlayer serverPlayer) {
+                BlockEntity be = level.getBlockEntity(clickedPos);
+                if (be instanceof WormholePortalBlockEntity portalBE) {
+                    java.util.UUID portalId = portalBE.getPortalId();
+                    if (portalId != null) {
+                        TransporterNetworkSavedData data = TransporterNetworkSavedData.get(serverLevel);
+                        WormholeRecord wormhole = data.getWormhole(portalId).orElse(null);
+
+                        if (wormhole != null && !wormhole.isLinked()) {
+                            // Get unlinked portals in same dimension
+                            String dimensionKey = serverLevel.dimension().location().toString();
+                            List<WormholeRecord> unlinked = data.getUnlinkedWormholes(dimensionKey, portalId);
+
+                            if (unlinked.isEmpty()) {
+                                player.displayClientMessage(
+                                        Component.literal("No other unlinked wormholes available in this dimension."), true);
+                            } else {
+                                // Convert to payload entries
+                                List<OpenWormholeLinkScreenPayload.PortalEntry> entries = new ArrayList<>();
+                                for (WormholeRecord w : unlinked) {
+                                    entries.add(new OpenWormholeLinkScreenPayload.PortalEntry(
+                                            w.portalId().toString(),
+                                            w.name(),
+                                            w.anchorPos().getX(),
+                                            w.anchorPos().getY(),
+                                            w.anchorPos().getZ()
+                                    ));
+                                }
+
+                                // Send packet to open link screen
+                                PacketDistributor.sendToPlayer(serverPlayer,
+                                        new OpenWormholeLinkScreenPayload(
+                                                portalId.toString(),
+                                                wormhole.name(),
+                                                entries
+                                        ));
+                            }
+                            return InteractionResult.SUCCESS;
+                        } else if (wormhole != null && wormhole.isLinked()) {
+                            // Already linked - show linked portal info
+                            data.getWormhole(wormhole.linkedPortalId()).ifPresent(linked -> {
+                                player.displayClientMessage(
+                                        Component.literal("Linked to: " + linked.name() +
+                                                " at " + linked.anchorPos().toShortString()), true);
+                            });
+                            return InteractionResult.SUCCESS;
+                        }
                     }
                 }
             }
+            // For non-Cleo tricorders clicking on portal, consume the interaction but do nothing
+            return InteractionResult.SUCCESS;
         }
 
-        // Not a Cleo tricorder, or not clicking cobblestone - fall through to normal use
+        // Handle clicking on cobblestone (for creating new wormholes)
+        if (isCleoTricorder) {
+            // Check if this is cobblestone - if so, consume the interaction on both sides
+            // to prevent use() from being called (which would open the tricorder menu)
+            if (level.getBlockState(clickedPos).is(net.minecraft.world.level.block.Blocks.COBBLESTONE)) {
+                if (!level.isClientSide && player instanceof ServerPlayer serverPlayer) {
+                    WormholeService.ActivationAttempt attempt = WormholeService.tryActivate(player, clickedPos);
+
+                    switch (attempt.result()) {
+                        case SUCCESS -> {
+                            String defaultName = "Wormhole-" + attempt.portalId().toString().substring(0, 4).toUpperCase();
+                            PacketDistributor.sendToPlayer(serverPlayer,
+                                    OpenNamingScreenPayload.forWormhole(attempt.portalId(), defaultName));
+                        }
+                        case INVALID_FRAME -> {
+                            player.displayClientMessage(
+                                    Component.literal("Invalid wormhole frame. Build a rectangular cobblestone frame with air inside."), true);
+                        }
+                        case PORTAL_EXISTS_HERE -> {
+                            player.displayClientMessage(
+                                    Component.literal("A wormhole portal already exists here."), true);
+                        }
+                        case NOT_COBBLESTONE -> {
+                            // This shouldn't happen since we checked for cobblestone above
+                        }
+                    }
+                }
+                // Return SUCCESS on both client and server to prevent use() from being called
+                return InteractionResult.SUCCESS;
+            }
+        }
+
+        // Not a special interaction - fall through to normal use
         return InteractionResult.PASS;
     }
 

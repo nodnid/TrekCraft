@@ -1,24 +1,15 @@
 package com.csquared.trekcraft.content.block;
 
 import com.csquared.trekcraft.content.blockentity.WormholePortalBlockEntity;
-import com.csquared.trekcraft.content.item.TricorderItem;
-import com.csquared.trekcraft.data.TricorderData;
 import com.csquared.trekcraft.data.TransporterNetworkSavedData;
 import com.csquared.trekcraft.data.WormholeRecord;
-import com.csquared.trekcraft.network.OpenWormholeLinkScreenPayload;
-import com.csquared.trekcraft.registry.ModBlockEntities;
-import com.csquared.trekcraft.registry.ModItems;
 import com.csquared.trekcraft.service.WormholeService;
 import com.csquared.trekcraft.util.WormholeFrameDetector;
 import com.mojang.serialization.MapCodec;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Level;
@@ -33,14 +24,10 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.EnumProperty;
-import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.VoxelShape;
-import net.neoforged.neoforge.network.PacketDistributor;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.UUID;
 
 public class WormholePortalBlock extends BaseEntityBlock {
@@ -90,78 +77,6 @@ public class WormholePortalBlock extends BaseEntityBlock {
     @Override
     public BlockState getStateForPlacement(BlockPlaceContext context) {
         return this.defaultBlockState().setValue(AXIS, context.getHorizontalDirection().getAxis());
-    }
-
-    @Override
-    protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
-        if (!level.isClientSide && level instanceof ServerLevel serverLevel && player instanceof ServerPlayer serverPlayer) {
-            // Check if player is holding a Cleo tricorder
-            ItemStack mainHand = player.getMainHandItem();
-            ItemStack offHand = player.getOffhandItem();
-
-            ItemStack tricorderStack = null;
-            if (mainHand.is(ModItems.TRICORDER.get())) {
-                tricorderStack = mainHand;
-            } else if (offHand.is(ModItems.TRICORDER.get())) {
-                tricorderStack = offHand;
-            }
-
-            if (tricorderStack != null) {
-                TricorderData tricorderData = TricorderItem.getTricorderData(tricorderStack);
-                if (tricorderData != null && tricorderData.label().filter(l -> "Cleo".equalsIgnoreCase(l)).isPresent()) {
-                    // Get the portal ID from the block entity
-                    BlockEntity be = level.getBlockEntity(pos);
-                    if (be instanceof WormholePortalBlockEntity portalBE) {
-                        UUID portalId = portalBE.getPortalId();
-                        if (portalId != null) {
-                            TransporterNetworkSavedData data = TransporterNetworkSavedData.get(serverLevel);
-                            WormholeRecord wormhole = data.getWormhole(portalId).orElse(null);
-
-                            if (wormhole != null && !wormhole.isLinked()) {
-                                // Get unlinked portals in same dimension
-                                String dimensionKey = serverLevel.dimension().location().toString();
-                                List<WormholeRecord> unlinked = data.getUnlinkedWormholes(dimensionKey, portalId);
-
-                                if (unlinked.isEmpty()) {
-                                    player.displayClientMessage(
-                                            net.minecraft.network.chat.Component.literal("No other unlinked wormholes available in this dimension."), true);
-                                } else {
-                                    // Convert to payload entries
-                                    List<OpenWormholeLinkScreenPayload.PortalEntry> entries = new ArrayList<>();
-                                    for (WormholeRecord w : unlinked) {
-                                        entries.add(new OpenWormholeLinkScreenPayload.PortalEntry(
-                                                w.portalId().toString(),
-                                                w.name(),
-                                                w.anchorPos().getX(),
-                                                w.anchorPos().getY(),
-                                                w.anchorPos().getZ()
-                                        ));
-                                    }
-
-                                    // Send packet to open link screen
-                                    PacketDistributor.sendToPlayer(serverPlayer,
-                                            new OpenWormholeLinkScreenPayload(
-                                                    portalId.toString(),
-                                                    wormhole.name(),
-                                                    entries
-                                            ));
-                                }
-                                return InteractionResult.SUCCESS;
-                            } else if (wormhole != null && wormhole.isLinked()) {
-                                // Already linked - show linked portal info
-                                data.getWormhole(wormhole.linkedPortalId()).ifPresent(linked -> {
-                                    player.displayClientMessage(
-                                            net.minecraft.network.chat.Component.literal("Linked to: " + linked.name() +
-                                                    " at " + linked.anchorPos().toShortString()), true);
-                                });
-                                return InteractionResult.SUCCESS;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        return InteractionResult.PASS;
     }
 
     @Override
