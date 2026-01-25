@@ -154,9 +154,15 @@ public class WormholeService {
         // Set cooldown before teleporting
         persistentData.putLong(WormholePortalBlock.WORMHOLE_COOLDOWN_KEY, currentTime);
 
-        // Teleport the entity
-        entity.teleportTo(centerX, centerY, centerZ);
-        entity.setDeltaMovement(Vec3.ZERO);
+        // Teleport the entity - use proper method for players to avoid "moved wrongly" warnings
+        if (entity instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+            // Use connection.teleport which properly resets movement validation
+            serverPlayer.connection.teleport(centerX, centerY, centerZ, entity.getYRot(), entity.getXRot());
+            serverPlayer.setDeltaMovement(Vec3.ZERO);
+        } else {
+            entity.teleportTo(centerX, centerY, centerZ);
+            entity.setDeltaMovement(Vec3.ZERO);
+        }
 
         // Play effects
         level.playSound(null, entity.blockPosition(),
