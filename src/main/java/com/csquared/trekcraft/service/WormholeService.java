@@ -114,14 +114,22 @@ public class WormholeService {
         long currentTime = level.getGameTime();
 
         if (currentTime - lastTeleportTime < WormholePortalBlock.COOLDOWN_TICKS) {
+            TrekCraftMod.LOGGER.debug("Teleport blocked by cooldown: {} ticks remaining",
+                    WormholePortalBlock.COOLDOWN_TICKS - (currentTime - lastTeleportTime));
             return; // Still on cooldown
         }
 
         TransporterNetworkSavedData data = TransporterNetworkSavedData.get(level);
         WormholeRecord sourceWormhole = data.getWormhole(portalId).orElse(null);
 
-        if (sourceWormhole == null || !sourceWormhole.isLinked()) {
-            return; // Portal doesn't exist or isn't linked
+        if (sourceWormhole == null) {
+            TrekCraftMod.LOGGER.warn("Teleport failed: source wormhole {} not found in saved data", portalId);
+            return;
+        }
+
+        if (!sourceWormhole.isLinked()) {
+            TrekCraftMod.LOGGER.debug("Teleport blocked: wormhole {} is not linked", portalId);
+            return; // Portal isn't linked
         }
 
         WormholeRecord destWormhole = data.getWormhole(sourceWormhole.linkedPortalId()).orElse(null);

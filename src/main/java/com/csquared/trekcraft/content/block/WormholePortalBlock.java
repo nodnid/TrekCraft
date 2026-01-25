@@ -88,11 +88,13 @@ public class WormholePortalBlock extends BaseEntityBlock {
         // Get portal ID from block entity
         BlockEntity be = level.getBlockEntity(pos);
         if (!(be instanceof WormholePortalBlockEntity portalBE)) {
+            com.csquared.trekcraft.TrekCraftMod.LOGGER.warn("entityInside: BlockEntity at {} is not WormholePortalBlockEntity", pos);
             return;
         }
 
         UUID portalId = portalBE.getPortalId();
         if (portalId == null) {
+            com.csquared.trekcraft.TrekCraftMod.LOGGER.warn("entityInside: Portal at {} has null portalId", pos);
             return;
         }
 
