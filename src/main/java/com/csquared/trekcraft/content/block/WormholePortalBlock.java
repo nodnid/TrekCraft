@@ -9,7 +9,6 @@ import com.mojang.serialization.MapCodec;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Level;
@@ -20,7 +19,10 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityTicker;
+import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
+import com.csquared.trekcraft.registry.ModBlockEntities;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.EnumProperty;
@@ -75,32 +77,22 @@ public class WormholePortalBlock extends BaseEntityBlock {
 
     @Nullable
     @Override
+    public <T extends BlockEntity> BlockEntityTicker<T> getTicker(Level level, BlockState state, BlockEntityType<T> type) {
+        // Only tick on server side
+        if (level.isClientSide) {
+            return null;
+        }
+        return createTickerHelper(type, ModBlockEntities.WORMHOLE_PORTAL.get(), WormholePortalBlockEntity::serverTick);
+    }
+
+    @Nullable
+    @Override
     public BlockState getStateForPlacement(BlockPlaceContext context) {
         return this.defaultBlockState().setValue(AXIS, context.getHorizontalDirection().getAxis());
     }
 
-    @Override
-    public void entityInside(BlockState state, Level level, BlockPos pos, Entity entity) {
-        if (level.isClientSide || !(level instanceof ServerLevel serverLevel)) {
-            return;
-        }
-
-        // Get portal ID from block entity
-        BlockEntity be = level.getBlockEntity(pos);
-        if (!(be instanceof WormholePortalBlockEntity portalBE)) {
-            com.csquared.trekcraft.TrekCraftMod.LOGGER.warn("entityInside: BlockEntity at {} is not WormholePortalBlockEntity", pos);
-            return;
-        }
-
-        UUID portalId = portalBE.getPortalId();
-        if (portalId == null) {
-            com.csquared.trekcraft.TrekCraftMod.LOGGER.warn("entityInside: Portal at {} has null portalId", pos);
-            return;
-        }
-
-        // Teleport through the wormhole
-        WormholeService.teleportThrough(serverLevel, entity, portalId);
-    }
+    // Note: Entity detection is handled by WormholePortalBlockEntity.serverTick()
+    // which is more reliable on lagging servers than entityInside()
 
     @Override
     public BlockState updateShape(BlockState state, Direction direction, BlockState neighborState,

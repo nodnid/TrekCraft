@@ -143,21 +143,13 @@ public class WormholeService {
         int width = destWormhole.width();
         int height = destWormhole.height();
 
-        // Find center of portal
-        Direction horizontal = axis == Direction.Axis.X ? Direction.EAST : Direction.SOUTH;
+        // Place player at center of portal interior (which is air)
+        // Anchor is bottom-left interior block, so center is offset by width/2 and we use bottom Y for safety
         double centerX = destAnchor.getX() + (axis == Direction.Axis.X ? width / 2.0 : 0.5);
-        double centerY = destAnchor.getY() + height / 2.0;
+        double centerY = destAnchor.getY(); // Bottom of portal to ensure they're not in ceiling
         double centerZ = destAnchor.getZ() + (axis == Direction.Axis.Z ? width / 2.0 : 0.5);
 
-        // Offset slightly from the portal surface to avoid immediate re-entry
-        double offset = 0.5;
-        if (axis == Direction.Axis.X) {
-            // Portal faces north/south, offset in Z
-            centerZ += offset;
-        } else {
-            // Portal faces east/west, offset in X
-            centerX += offset;
-        }
+        // No offset needed - cooldown prevents immediate re-entry
 
         // Set cooldown before teleporting
         persistentData.putLong(WormholePortalBlock.WORMHOLE_COOLDOWN_KEY, currentTime);
@@ -171,6 +163,9 @@ public class WormholeService {
             entity.teleportTo(centerX, centerY, centerZ);
             entity.setDeltaMovement(Vec3.ZERO);
         }
+
+        // Reset fall distance to prevent fall damage after teleporting
+        entity.resetFallDistance();
 
         // Play effects
         level.playSound(null, entity.blockPosition(),
