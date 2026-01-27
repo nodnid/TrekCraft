@@ -38,16 +38,10 @@ public class ScanService {
     public enum ScanResult {
         SUCCESS,
         ON_COOLDOWN,
-        NO_SLIP,
-        NOT_OVERWORLD
+        NO_SLIP
     }
 
     public static ScanResult performScan(ServerPlayer player) {
-        // Check overworld
-        if (!player.level().dimension().equals(Level.OVERWORLD)) {
-            return ScanResult.NOT_OVERWORLD;
-        }
-
         // Check cooldown
         long currentTime = player.level().getGameTime();
         Long lastScan = cooldowns.get(player.getUUID());
@@ -246,7 +240,6 @@ public class ScanService {
             case SUCCESS -> "Scan complete.";
             case ON_COOLDOWN -> "Tricorder recalibrating. Please wait.";
             case NO_SLIP -> "Insufficient power. Scan requires 1 Latinum Slip.";
-            case NOT_OVERWORLD -> "Scan restricted to Overworld coordinates only.";
         };
     }
 }

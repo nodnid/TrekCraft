@@ -151,22 +151,25 @@ public class ModPayloads {
                     // Update signal registry if this tricorder is tracked
                     ServerLevel serverLevel = player.serverLevel();
                     TransporterNetworkSavedData savedData = TransporterNetworkSavedData.get(serverLevel);
+                    String dimensionKey = serverLevel.dimension().location().toString();
                     savedData.getSignal(payload.tricorderId()).ifPresent(signal -> {
-                        // Re-register with updated name
+                        // Re-register with updated name (use current dimension from signal)
                         if (signal.type() == TransporterNetworkSavedData.SignalType.HELD) {
                             savedData.registerHeldSignal(
                                     payload.tricorderId(),
                                     payload.name(),
                                     signal.lastKnownPos(),
                                     serverLevel.getGameTime(),
-                                    signal.holderId()
+                                    signal.holderId(),
+                                    signal.dimensionKey()
                             );
                         } else {
                             savedData.registerDroppedSignal(
                                     payload.tricorderId(),
                                     payload.name(),
                                     signal.lastKnownPos(),
-                                    serverLevel.getGameTime()
+                                    serverLevel.getGameTime(),
+                                    signal.dimensionKey()
                             );
                         }
                     });
@@ -192,7 +195,8 @@ public class ModPayloads {
         BlockEntity be = level.getBlockEntity(payload.padPos());
         if (be instanceof TransporterPadBlockEntity padBE) {
             padBE.setPadName(payload.name());
-            TransporterNetworkSavedData.get(level).registerPad(payload.padPos(), payload.name());
+            String dimensionKey = level.dimension().location().toString();
+            TransporterNetworkSavedData.get(level).registerPad(payload.padPos(), payload.name(), dimensionKey);
 
             player.displayClientMessage(
                     Component.literal("Transporter pad named: " + payload.name()), true);

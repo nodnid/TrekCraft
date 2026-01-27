@@ -10,7 +10,6 @@ import com.csquared.trekcraft.util.SafeTeleportFinder;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.level.Level;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -20,8 +19,8 @@ public class TransportService {
     public enum TransportResult {
         SUCCESS,
         NO_TRANSPORTER_ROOM,
-        NOT_OVERWORLD_SOURCE,
-        NOT_OVERWORLD_DEST,
+        PAD_WRONG_DIMENSION,
+        SIGNAL_WRONG_DIMENSION,
         INSUFFICIENT_FUEL,
         PLAYER_RIDING,
         DESTINATION_INVALID,
@@ -56,10 +55,17 @@ public class TransportService {
 
         ServerLevel level = (ServerLevel) player.level();
         TransporterNetworkSavedData data = TransporterNetworkSavedData.get(level);
+        String playerDimension = level.dimension().location().toString();
 
         // Check destination exists
-        if (data.getPad(padPos).isEmpty()) {
+        var padOpt = data.getPad(padPos);
+        if (padOpt.isEmpty()) {
             return TransportResult.DESTINATION_INVALID;
+        }
+
+        // Check pad is in same dimension as player
+        if (!padOpt.get().dimensionKey().equals(playerDimension)) {
+            return TransportResult.PAD_WRONG_DIMENSION;
         }
 
         // Find safe landing spot
@@ -81,6 +87,7 @@ public class TransportService {
 
         ServerLevel level = (ServerLevel) player.level();
         TransporterNetworkSavedData data = TransporterNetworkSavedData.get(level);
+        String playerDimension = level.dimension().location().toString();
 
         // Get signal
         var signalOpt = data.getSignal(tricorderId);
@@ -89,12 +96,18 @@ public class TransportService {
         }
 
         SignalRecord signal = signalOpt.get();
+
+        // Check signal is in same dimension as player
+        if (!signal.dimensionKey().equals(playerDimension)) {
+            return TransportResult.SIGNAL_WRONG_DIMENSION;
+        }
+
         BlockPos signalPos;
 
-        // For HELD signals, get current player position if online
+        // For HELD signals, get current player position if online and in same dimension
         if (signal.type() == SignalType.HELD && signal.holderId() != null) {
             ServerPlayer holder = level.getServer().getPlayerList().getPlayer(signal.holderId());
-            if (holder != null && holder.level().dimension().equals(Level.OVERWORLD)) {
+            if (holder != null && holder.level().dimension().location().toString().equals(playerDimension)) {
                 signalPos = holder.blockPosition();
             } else {
                 // Fall back to last known position
@@ -120,11 +133,6 @@ public class TransportService {
      * @return PreflightResult containing success/failure and the room to use for fuel
      */
     private static PreflightResult performPreflightChecks(ServerPlayer player, boolean toPad) {
-        // Check source is Overworld
-        if (!player.level().dimension().equals(Level.OVERWORLD)) {
-            return PreflightResult.failure(TransportResult.NOT_OVERWORLD_SOURCE);
-        }
-
         // Check not riding
         if (player.isPassenger() || player.getVehicle() != null) {
             return PreflightResult.failure(TransportResult.PLAYER_RIDING);
@@ -132,6 +140,7 @@ public class TransportService {
 
         ServerLevel level = (ServerLevel) player.level();
         TransporterNetworkSavedData data = TransporterNetworkSavedData.get(level);
+        String playerDimension = level.dimension().location().toString();
 
         // Check any room exists
         if (!data.hasAnyRoom()) {
@@ -141,8 +150,8 @@ public class TransportService {
         // Calculate effective range
         double maxRange = toPad ? TrekCraftConfig.transportPadRange : TrekCraftConfig.transportBaseRange;
 
-        // Find nearest room within range
-        Optional<RoomRecord> nearestRoom = data.getNearestRoom(player.blockPosition(), maxRange);
+        // Find nearest room within range in the player's current dimension
+        Optional<RoomRecord> nearestRoom = data.getNearestRoomInDimension(player.blockPosition(), playerDimension, maxRange);
         if (nearestRoom.isEmpty()) {
             return PreflightResult.failure(TransportResult.OUT_OF_RANGE);
         }
@@ -185,9 +194,9 @@ public class TransportService {
     public static String getResultMessage(TransportResult result) {
         return switch (result) {
             case SUCCESS -> "Transport complete. Energize!";
-            case NO_TRANSPORTER_ROOM -> "Transport offline. No active Transporter Room detected.";
-            case NOT_OVERWORLD_SOURCE -> "Transport restricted to Overworld coordinates only.";
-            case NOT_OVERWORLD_DEST -> "Destination coordinates outside Overworld. Transport denied.";
+            case NO_TRANSPORTER_ROOM -> "Transport offline. No active Transporter Room detected in this dimension.";
+            case PAD_WRONG_DIMENSION -> "Destination pad is in a different dimension. Cross-dimensional transport requires wormhole.";
+            case SIGNAL_WRONG_DIMENSION -> "Signal is in a different dimension. Cross-dimensional transport requires wormhole.";
             case INSUFFICIENT_FUEL -> "Insufficient power reserves. Insert Latinum Strips into Transporter Room.";
             case PLAYER_RIDING -> "Pattern lock failed: dismount required.";
             case DESTINATION_INVALID -> "Destination coordinates invalid or unavailable.";

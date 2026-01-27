@@ -46,7 +46,8 @@ public record OpenWormholeLinkScreenPayload(
     public record PortalEntry(
             String portalId,
             String name,
-            int x, int y, int z
+            int x, int y, int z,
+            String dimensionKey
     ) {
         public static final StreamCodec<RegistryFriendlyByteBuf, PortalEntry> STREAM_CODEC = StreamCodec.composite(
                 ByteBufCodecs.STRING_UTF8, PortalEntry::portalId,
@@ -54,6 +55,7 @@ public record OpenWormholeLinkScreenPayload(
                 ByteBufCodecs.VAR_INT, PortalEntry::x,
                 ByteBufCodecs.VAR_INT, PortalEntry::y,
                 ByteBufCodecs.VAR_INT, PortalEntry::z,
+                ByteBufCodecs.STRING_UTF8, PortalEntry::dimensionKey,
                 PortalEntry::new
         );
 
@@ -66,6 +68,23 @@ public record OpenWormholeLinkScreenPayload(
 
         public String getPositionString() {
             return x + ", " + y + ", " + z;
+        }
+
+        /**
+         * Get a short display name for the dimension.
+         */
+        public String getDimensionDisplayName() {
+            // Convert dimension key to a user-friendly name
+            return switch (dimensionKey) {
+                case "minecraft:overworld" -> "Overworld";
+                case "minecraft:the_nether" -> "Nether";
+                case "minecraft:the_end" -> "The End";
+                default -> {
+                    // For modded dimensions, use the path after the colon
+                    int colonIndex = dimensionKey.indexOf(':');
+                    yield colonIndex >= 0 ? dimensionKey.substring(colonIndex + 1) : dimensionKey;
+                }
+            };
         }
     }
 }

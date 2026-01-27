@@ -67,17 +67,18 @@ public class TransporterPadBlock extends BaseEntityBlock {
         if (!level.isClientSide && level instanceof ServerLevel serverLevel) {
             BlockEntity be = level.getBlockEntity(pos);
             if (be instanceof TransporterPadBlockEntity padBE) {
+                String dimensionKey = serverLevel.dimension().location().toString();
                 // Use item's custom name if it has one (e.g., renamed in anvil)
                 Component customName = stack.get(DataComponents.CUSTOM_NAME);
                 if (customName != null) {
                     // Use the anvil name directly, no naming screen
                     padBE.setPadName(customName.getString());
-                    TransporterNetworkSavedData.get(serverLevel).registerPad(pos, padBE.getPadName());
+                    TransporterNetworkSavedData.get(serverLevel).registerPad(pos, padBE.getPadName(), dimensionKey);
                 } else {
                     // Set temporary default name and open naming screen
                     String defaultName = "Pad " + pos.getX() + "," + pos.getY() + "," + pos.getZ();
                     padBE.setPadName(defaultName);
-                    TransporterNetworkSavedData.get(serverLevel).registerPad(pos, defaultName);
+                    TransporterNetworkSavedData.get(serverLevel).registerPad(pos, defaultName, dimensionKey);
 
                     // Send packet to open naming screen
                     if (placer instanceof ServerPlayer serverPlayer) {
@@ -98,8 +99,9 @@ public class TransporterPadBlock extends BaseEntityBlock {
                 BlockEntity be = level.getBlockEntity(pos);
                 if (be instanceof TransporterPadBlockEntity padBE) {
                     String newName = heldItem.get(DataComponents.CUSTOM_NAME).getString();
+                    String dimensionKey = serverLevel.dimension().location().toString();
                     padBE.setPadName(newName);
-                    TransporterNetworkSavedData.get(serverLevel).registerPad(pos, newName);
+                    TransporterNetworkSavedData.get(serverLevel).registerPad(pos, newName, dimensionKey);
 
                     player.displayClientMessage(
                             Component.literal("Transporter pad renamed to: " + newName), true);

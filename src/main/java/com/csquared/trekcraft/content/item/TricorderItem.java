@@ -68,15 +68,14 @@ public class TricorderItem extends Item {
                         WormholeRecord wormhole = data.getWormhole(portalId).orElse(null);
 
                         if (wormhole != null && !wormhole.isLinked()) {
-                            // Get unlinked portals in same dimension
-                            String dimensionKey = serverLevel.dimension().location().toString();
-                            List<WormholeRecord> unlinked = data.getUnlinkedWormholes(dimensionKey, portalId);
+                            // Get unlinked portals from ALL dimensions (pass null for dimension key)
+                            List<WormholeRecord> unlinked = data.getUnlinkedWormholes(null, portalId);
 
                             if (unlinked.isEmpty()) {
                                 player.displayClientMessage(
-                                        Component.literal("No other unlinked wormholes available in this dimension."), true);
+                                        Component.literal("No other unlinked wormholes available."), true);
                             } else {
-                                // Convert to payload entries
+                                // Convert to payload entries (include dimension info)
                                 List<OpenWormholeLinkScreenPayload.PortalEntry> entries = new ArrayList<>();
                                 for (WormholeRecord w : unlinked) {
                                     entries.add(new OpenWormholeLinkScreenPayload.PortalEntry(
@@ -84,7 +83,8 @@ public class TricorderItem extends Item {
                                             w.name(),
                                             w.anchorPos().getX(),
                                             w.anchorPos().getY(),
-                                            w.anchorPos().getZ()
+                                            w.anchorPos().getZ(),
+                                            w.dimensionKey()
                                     ));
                                 }
 

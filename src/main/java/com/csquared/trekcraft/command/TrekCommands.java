@@ -115,10 +115,12 @@ public class TrekCommands {
 
         ServerLevel level = (ServerLevel) player.level();
         TransporterNetworkSavedData data = TransporterNetworkSavedData.get(level);
+        String playerDimension = level.dimension().location().toString();
 
-        var pads = data.getPads();
+        // Only show pads in the player's current dimension
+        var pads = data.getPadsInDimension(playerDimension);
         if (pads.isEmpty()) {
-            player.sendSystemMessage(Component.literal("No transporter pads registered.")
+            player.sendSystemMessage(Component.literal("No transporter pads registered in this dimension.")
                     .withStyle(ChatFormatting.YELLOW));
             return 1;
         }
@@ -165,10 +167,12 @@ public class TrekCommands {
 
         ServerLevel level = (ServerLevel) player.level();
         TransporterNetworkSavedData data = TransporterNetworkSavedData.get(level);
+        String playerDimension = level.dimension().location().toString();
 
-        var signals = data.getSignals();
+        // Only show signals in the player's current dimension
+        var signals = data.getSignalsInDimension(playerDimension);
         if (signals.isEmpty()) {
-            player.sendSystemMessage(Component.literal("No tricorder signals detected.")
+            player.sendSystemMessage(Component.literal("No tricorder signals detected in this dimension.")
                     .withStyle(ChatFormatting.YELLOW));
             return 1;
         }

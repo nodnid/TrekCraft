@@ -14,10 +14,6 @@ public class TrekCraftConfig {
             .comment("Enable/disable the transport system")
             .define("transport.enabled", true);
 
-    private static final ModConfigSpec.BooleanValue OVERWORLD_ONLY = BUILDER
-            .comment("Restrict transport to Overworld only")
-            .define("transport.overworldOnly", true);
-
     private static final ModConfigSpec.BooleanValue DENY_WHILE_RIDING = BUILDER
             .comment("Deny transport while player is riding/mounted")
             .define("transport.denyWhileRiding", true);
@@ -72,7 +68,6 @@ public class TrekCraftConfig {
 
     // Runtime config values
     public static boolean transportEnabled;
-    public static boolean overworldOnly;
     public static boolean denyWhileRiding;
     public static int teleportCost;
     public static int safeSearchRadius;
@@ -89,7 +84,6 @@ public class TrekCraftConfig {
     @SubscribeEvent
     static void onLoad(final ModConfigEvent event) {
         transportEnabled = TRANSPORT_ENABLED.get();
-        overworldOnly = OVERWORLD_ONLY.get();
         denyWhileRiding = DENY_WHILE_RIDING.get();
         teleportCost = TELEPORT_COST.get();
         safeSearchRadius = SAFE_SEARCH_RADIUS.get();

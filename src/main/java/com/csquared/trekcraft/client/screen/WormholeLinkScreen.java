@@ -82,7 +82,8 @@ public class WormholeLinkScreen extends Screen {
             if (portalIndex >= availablePortals.size()) break;
 
             OpenWormholeLinkScreenPayload.PortalEntry portal = availablePortals.get(portalIndex);
-            String buttonText = portal.name() + " (" + portal.getPositionString() + ")";
+            // Show dimension name alongside portal info for cross-dimensional linking
+            String buttonText = portal.name() + " [" + portal.getDimensionDisplayName() + "]";
 
             final UUID targetId = portal.getPortalId();
             addRenderableWidget(LCARSButton.lcarsBuilder(

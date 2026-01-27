@@ -57,7 +57,10 @@ public class TransporterNetworkSavedData extends SavedData {
                     BlockPos pos = new BlockPos(posArray[0], posArray[1], posArray[2]);
                     int cachedFuel = roomTag.getInt("CachedFuel");
                     long registeredTime = roomTag.getLong("RegisteredTime");
-                    data.rooms.put(pos, new RoomRecord(pos, cachedFuel, registeredTime));
+                    // Migration: default to overworld if dimension not present
+                    String dimensionKey = roomTag.contains("DimensionKey") ?
+                            roomTag.getString("DimensionKey") : "minecraft:overworld";
+                    data.rooms.put(pos, new RoomRecord(pos, cachedFuel, registeredTime, dimensionKey));
                 }
             }
         }
@@ -67,7 +70,7 @@ public class TransporterNetworkSavedData extends SavedData {
             if (roomPosArray.length == 3) {
                 BlockPos pos = new BlockPos(roomPosArray[0], roomPosArray[1], roomPosArray[2]);
                 int cachedFuel = tag.getInt("CachedFuel");
-                data.rooms.put(pos, new RoomRecord(pos, cachedFuel, System.currentTimeMillis()));
+                data.rooms.put(pos, new RoomRecord(pos, cachedFuel, System.currentTimeMillis(), "minecraft:overworld"));
                 TrekCraftMod.LOGGER.info("Migrated old single-room format to multi-room format");
             }
         }
@@ -81,7 +84,10 @@ public class TransporterNetworkSavedData extends SavedData {
                 BlockPos pos = new BlockPos(posArray[0], posArray[1], posArray[2]);
                 String name = padTag.getString("Name");
                 long created = padTag.getLong("Created");
-                data.pads.put(pos, new PadRecord(pos, name, created));
+                // Migration: default to overworld if dimension not present
+                String dimensionKey = padTag.contains("DimensionKey") ?
+                        padTag.getString("DimensionKey") : "minecraft:overworld";
+                data.pads.put(pos, new PadRecord(pos, name, created, dimensionKey));
             }
         }
 
@@ -108,7 +114,11 @@ public class TransporterNetworkSavedData extends SavedData {
                 holderId = signalTag.getUUID("HolderId");
             }
 
-            data.signals.put(tricorderId, new SignalRecord(tricorderId, displayName, pos, lastSeen, type, holderId));
+            // Migration: default to overworld if dimension not present
+            String dimensionKey = signalTag.contains("DimensionKey") ?
+                    signalTag.getString("DimensionKey") : "minecraft:overworld";
+
+            data.signals.put(tricorderId, new SignalRecord(tricorderId, displayName, pos, lastSeen, type, holderId, dimensionKey));
         }
 
         // Load wormholes
@@ -147,6 +157,7 @@ public class TransporterNetworkSavedData extends SavedData {
             roomTag.putIntArray("Pos", new int[]{room.pos().getX(), room.pos().getY(), room.pos().getZ()});
             roomTag.putInt("CachedFuel", room.cachedFuel());
             roomTag.putLong("RegisteredTime", room.registeredTime());
+            roomTag.putString("DimensionKey", room.dimensionKey());
             roomsTag.add(roomTag);
         }
         tag.put("Rooms", roomsTag);
@@ -158,6 +169,7 @@ public class TransporterNetworkSavedData extends SavedData {
             padTag.putIntArray("Pos", new int[]{pad.pos().getX(), pad.pos().getY(), pad.pos().getZ()});
             padTag.putString("Name", pad.name());
             padTag.putLong("Created", pad.createdGameTime());
+            padTag.putString("DimensionKey", pad.dimensionKey());
             padsTag.add(padTag);
         }
         tag.put("Pads", padsTag);
@@ -178,6 +190,7 @@ public class TransporterNetworkSavedData extends SavedData {
             if (signal.holderId() != null) {
                 signalTag.putUUID("HolderId", signal.holderId());
             }
+            signalTag.putString("DimensionKey", signal.dimensionKey());
             signalsTag.add(signalTag);
         }
         tag.put("Signals", signalsTag);
@@ -210,8 +223,8 @@ public class TransporterNetworkSavedData extends SavedData {
 
     // ===== Room methods =====
 
-    public void registerRoom(BlockPos pos) {
-        rooms.put(pos, new RoomRecord(pos, 0, System.currentTimeMillis()));
+    public void registerRoom(BlockPos pos, String dimensionKey) {
+        rooms.put(pos, new RoomRecord(pos, 0, System.currentTimeMillis(), dimensionKey));
         setDirty();
     }
 
@@ -233,7 +246,7 @@ public class TransporterNetworkSavedData extends SavedData {
     }
 
     /**
-     * Find the nearest room within the given range.
+     * Find the nearest room within the given range (any dimension).
      * @param playerPos The player's current position
      * @param maxRange Maximum distance to search
      * @return The nearest room within range, or empty if none found
@@ -243,6 +256,31 @@ public class TransporterNetworkSavedData extends SavedData {
         double nearestDistSq = Double.MAX_VALUE;
 
         for (RoomRecord room : rooms.values()) {
+            double distSq = playerPos.distSqr(room.pos());
+            if (distSq <= maxRange * maxRange && distSq < nearestDistSq) {
+                nearestDistSq = distSq;
+                nearest = room;
+            }
+        }
+
+        return Optional.ofNullable(nearest);
+    }
+
+    /**
+     * Find the nearest room within the given range in a specific dimension.
+     * @param playerPos The player's current position
+     * @param dimensionKey The dimension to search in
+     * @param maxRange Maximum distance to search
+     * @return The nearest room within range in the dimension, or empty if none found
+     */
+    public Optional<RoomRecord> getNearestRoomInDimension(BlockPos playerPos, String dimensionKey, double maxRange) {
+        RoomRecord nearest = null;
+        double nearestDistSq = Double.MAX_VALUE;
+
+        for (RoomRecord room : rooms.values()) {
+            if (!room.dimensionKey().equals(dimensionKey)) {
+                continue;
+            }
             double distSq = playerPos.distSqr(room.pos());
             if (distSq <= maxRange * maxRange && distSq < nearestDistSq) {
                 nearestDistSq = distSq;
@@ -268,7 +306,7 @@ public class TransporterNetworkSavedData extends SavedData {
     public void setRoomFuel(BlockPos roomPos, int fuel) {
         RoomRecord room = rooms.get(roomPos);
         if (room != null) {
-            rooms.put(roomPos, new RoomRecord(room.pos(), fuel, room.registeredTime()));
+            rooms.put(roomPos, new RoomRecord(room.pos(), fuel, room.registeredTime(), room.dimensionKey()));
             setDirty();
         }
     }
@@ -276,7 +314,7 @@ public class TransporterNetworkSavedData extends SavedData {
     public boolean consumeRoomFuel(BlockPos roomPos, int amount) {
         RoomRecord room = rooms.get(roomPos);
         if (room != null && room.cachedFuel() >= amount) {
-            rooms.put(roomPos, new RoomRecord(room.pos(), room.cachedFuel() - amount, room.registeredTime()));
+            rooms.put(roomPos, new RoomRecord(room.pos(), room.cachedFuel() - amount, room.registeredTime(), room.dimensionKey()));
             setDirty();
             return true;
         }
@@ -285,8 +323,8 @@ public class TransporterNetworkSavedData extends SavedData {
 
     // ===== Pad methods =====
 
-    public void registerPad(BlockPos pos, String name) {
-        pads.put(pos, new PadRecord(pos, name, System.currentTimeMillis()));
+    public void registerPad(BlockPos pos, String name, String dimensionKey) {
+        pads.put(pos, new PadRecord(pos, name, System.currentTimeMillis(), dimensionKey));
         setDirty();
     }
 
@@ -299,6 +337,19 @@ public class TransporterNetworkSavedData extends SavedData {
         return Collections.unmodifiableMap(pads);
     }
 
+    /**
+     * Get all pads in a specific dimension.
+     */
+    public Map<BlockPos, PadRecord> getPadsInDimension(String dimensionKey) {
+        Map<BlockPos, PadRecord> result = new HashMap<>();
+        for (var entry : pads.entrySet()) {
+            if (entry.getValue().dimensionKey().equals(dimensionKey)) {
+                result.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return Collections.unmodifiableMap(result);
+    }
+
     public Optional<PadRecord> getPad(BlockPos pos) {
         return Optional.ofNullable(pads.get(pos));
     }
@@ -308,23 +359,23 @@ public class TransporterNetworkSavedData extends SavedData {
     /**
      * Register a dropped tricorder signal.
      */
-    public void registerDroppedSignal(UUID tricorderId, String displayName, BlockPos pos, long gameTime) {
-        signals.put(tricorderId, new SignalRecord(tricorderId, displayName, pos, gameTime, SignalType.DROPPED, null));
+    public void registerDroppedSignal(UUID tricorderId, String displayName, BlockPos pos, long gameTime, String dimensionKey) {
+        signals.put(tricorderId, new SignalRecord(tricorderId, displayName, pos, gameTime, SignalType.DROPPED, null, dimensionKey));
         setDirty();
     }
 
     /**
      * Register a held tricorder signal (in player inventory).
      */
-    public void registerHeldSignal(UUID tricorderId, String displayName, BlockPos pos, long gameTime, UUID holderId) {
-        signals.put(tricorderId, new SignalRecord(tricorderId, displayName, pos, gameTime, SignalType.HELD, holderId));
+    public void registerHeldSignal(UUID tricorderId, String displayName, BlockPos pos, long gameTime, UUID holderId, String dimensionKey) {
+        signals.put(tricorderId, new SignalRecord(tricorderId, displayName, pos, gameTime, SignalType.HELD, holderId, dimensionKey));
         setDirty();
     }
 
     /**
      * Update signal position (for tracking held tricorders).
      */
-    public void updateSignalPosition(UUID tricorderId, BlockPos pos, long gameTime) {
+    public void updateSignalPosition(UUID tricorderId, BlockPos pos, long gameTime, String dimensionKey) {
         SignalRecord existing = signals.get(tricorderId);
         if (existing != null) {
             signals.put(tricorderId, new SignalRecord(
@@ -333,7 +384,8 @@ public class TransporterNetworkSavedData extends SavedData {
                     pos,
                     gameTime,
                     existing.type(),
-                    existing.holderId()
+                    existing.holderId(),
+                    dimensionKey
             ));
             setDirty();
         }
@@ -346,6 +398,19 @@ public class TransporterNetworkSavedData extends SavedData {
 
     public Map<UUID, SignalRecord> getSignals() {
         return Collections.unmodifiableMap(signals);
+    }
+
+    /**
+     * Get all signals in a specific dimension.
+     */
+    public Map<UUID, SignalRecord> getSignalsInDimension(String dimensionKey) {
+        Map<UUID, SignalRecord> result = new HashMap<>();
+        for (var entry : signals.entrySet()) {
+            if (entry.getValue().dimensionKey().equals(dimensionKey)) {
+                result.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return Collections.unmodifiableMap(result);
     }
 
     public Optional<SignalRecord> getSignal(UUID tricorderId) {
@@ -385,14 +450,16 @@ public class TransporterNetworkSavedData extends SavedData {
     }
 
     /**
-     * Get all unlinked wormholes in the specified dimension (excludes the given portal).
+     * Get unlinked wormholes, optionally filtered by dimension.
+     * @param dimensionKey If null, returns all unlinked wormholes; otherwise filters by dimension
+     * @param excludePortalId Portal ID to exclude from results
      */
-    public List<WormholeRecord> getUnlinkedWormholes(String dimensionKey, UUID excludePortalId) {
+    public List<WormholeRecord> getUnlinkedWormholes(@Nullable String dimensionKey, UUID excludePortalId) {
         List<WormholeRecord> unlinked = new ArrayList<>();
         for (WormholeRecord wormhole : wormholes.values()) {
             if (!wormhole.isLinked()
-                    && wormhole.dimensionKey().equals(dimensionKey)
-                    && !wormhole.portalId().equals(excludePortalId)) {
+                    && !wormhole.portalId().equals(excludePortalId)
+                    && (dimensionKey == null || wormhole.dimensionKey().equals(dimensionKey))) {
                 unlinked.add(wormhole);
             }
         }
@@ -419,11 +486,69 @@ public class TransporterNetworkSavedData extends SavedData {
         return Optional.empty();
     }
 
+    /**
+     * Find a wormhole by a position that is part of its cobblestone frame.
+     * The frame surrounds the portal interior (anchorPos is bottom-left interior block).
+     */
+    public Optional<WormholeRecord> getWormholeByFramePosition(BlockPos framePos) {
+        for (WormholeRecord wormhole : wormholes.values()) {
+            if (isPositionInFrame(framePos, wormhole)) {
+                return Optional.of(wormhole);
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Check if a position is part of a wormhole's frame.
+     */
+    private boolean isPositionInFrame(BlockPos pos, WormholeRecord wormhole) {
+        BlockPos anchor = wormhole.anchorPos();
+        Direction horizontal = wormhole.axis() == Direction.Axis.X ? Direction.EAST : Direction.SOUTH;
+        int width = wormhole.width();
+        int height = wormhole.height();
+
+        // Frame bottom-left corner is one below and one back from anchor
+        BlockPos bottomLeft = anchor.below().relative(horizontal.getOpposite());
+
+        // Check bottom row
+        for (int i = 0; i < width + 2; i++) {
+            if (pos.equals(bottomLeft.relative(horizontal, i))) {
+                return true;
+            }
+        }
+
+        // Check top row
+        BlockPos topLeft = bottomLeft.above(height + 1);
+        for (int i = 0; i < width + 2; i++) {
+            if (pos.equals(topLeft.relative(horizontal, i))) {
+                return true;
+            }
+        }
+
+        // Check left side (excluding corners)
+        for (int i = 1; i <= height; i++) {
+            if (pos.equals(bottomLeft.above(i))) {
+                return true;
+            }
+        }
+
+        // Check right side (excluding corners)
+        BlockPos bottomRight = bottomLeft.relative(horizontal, width + 1);
+        for (int i = 1; i <= height; i++) {
+            if (pos.equals(bottomRight.above(i))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     // ===== Record types =====
 
-    public record RoomRecord(BlockPos pos, int cachedFuel, long registeredTime) {}
+    public record RoomRecord(BlockPos pos, int cachedFuel, long registeredTime, String dimensionKey) {}
 
-    public record PadRecord(BlockPos pos, String name, long createdGameTime) {}
+    public record PadRecord(BlockPos pos, String name, long createdGameTime, String dimensionKey) {}
 
     public record SignalRecord(
             UUID tricorderId,
@@ -431,7 +556,8 @@ public class TransporterNetworkSavedData extends SavedData {
             BlockPos lastKnownPos,
             long lastSeenGameTime,
             SignalType type,
-            @Nullable UUID holderId
+            @Nullable UUID holderId,
+            String dimensionKey
     ) {}
 
     public enum SignalType {

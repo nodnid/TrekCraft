@@ -9,12 +9,18 @@ import com.csquared.trekcraft.registry.ModBlocks;
 import com.csquared.trekcraft.util.WormholeFrameDetector;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.portal.DimensionTransition;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.UUID;
@@ -106,6 +112,7 @@ public class WormholeService {
 
     /**
      * Teleport an entity through a wormhole portal.
+     * Supports cross-dimensional teleportation.
      */
     public static void teleportThrough(ServerLevel level, Entity entity, UUID portalId) {
         // Check cooldown
@@ -137,11 +144,25 @@ public class WormholeService {
             return; // Destination portal doesn't exist
         }
 
+        // Get destination level (may be different dimension)
+        ServerLevel destLevel = level;
+        boolean crossDimensional = !sourceWormhole.dimensionKey().equals(destWormhole.dimensionKey());
+        if (crossDimensional) {
+            ResourceKey<Level> destDimKey = ResourceKey.create(
+                    Registries.DIMENSION,
+                    ResourceLocation.parse(destWormhole.dimensionKey())
+            );
+            destLevel = level.getServer().getLevel(destDimKey);
+            if (destLevel == null) {
+                TrekCraftMod.LOGGER.warn("Destination dimension {} unavailable", destWormhole.dimensionKey());
+                return;
+            }
+        }
+
         // Calculate destination position (center of the portal interior)
         BlockPos destAnchor = destWormhole.anchorPos();
         Direction.Axis axis = destWormhole.axis();
         int width = destWormhole.width();
-        int height = destWormhole.height();
 
         // Place player at center of portal interior (which is air)
         // Anchor is bottom-left interior block, so center is offset by width/2 and we use bottom Y for safety
@@ -149,34 +170,59 @@ public class WormholeService {
         double centerY = destAnchor.getY(); // Bottom of portal to ensure they're not in ceiling
         double centerZ = destAnchor.getZ() + (axis == Direction.Axis.Z ? width / 2.0 : 0.5);
 
-        // No offset needed - cooldown prevents immediate re-entry
-
         // Set cooldown before teleporting
         persistentData.putLong(WormholePortalBlock.WORMHOLE_COOLDOWN_KEY, currentTime);
 
-        // Teleport the entity - use proper method for players to avoid "moved wrongly" warnings
-        if (entity instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
-            // Use connection.teleport which properly resets movement validation
-            serverPlayer.connection.teleport(centerX, centerY, centerZ, entity.getYRot(), entity.getXRot());
+        // Teleport the entity - handle cross-dimensional teleportation
+        if (entity instanceof ServerPlayer serverPlayer) {
+            // For players, use teleportTo which handles cross-dimensional travel
+            serverPlayer.teleportTo(destLevel, centerX, centerY, centerZ,
+                    entity.getYRot(), entity.getXRot());
             serverPlayer.setDeltaMovement(Vec3.ZERO);
         } else {
-            entity.teleportTo(centerX, centerY, centerZ);
-            entity.setDeltaMovement(Vec3.ZERO);
+            // For non-player entities
+            if (crossDimensional) {
+                Vec3 destPos = new Vec3(centerX, centerY, centerZ);
+                DimensionTransition transition = new DimensionTransition(
+                        destLevel,
+                        destPos,
+                        Vec3.ZERO,
+                        entity.getYRot(),
+                        entity.getXRot(),
+                        DimensionTransition.DO_NOTHING
+                );
+                Entity newEntity = entity.changeDimension(transition);
+                if (newEntity != null) {
+                    newEntity.teleportTo(centerX, centerY, centerZ);
+                    newEntity.setDeltaMovement(Vec3.ZERO);
+                    newEntity.resetFallDistance();
+                }
+            } else {
+                entity.teleportTo(centerX, centerY, centerZ);
+                entity.setDeltaMovement(Vec3.ZERO);
+            }
         }
 
         // Reset fall distance to prevent fall damage after teleporting
         entity.resetFallDistance();
 
-        // Play effects
+        // Play effects in both dimensions
         level.playSound(null, entity.blockPosition(),
                 net.minecraft.sounds.SoundEvents.ENDERMAN_TELEPORT,
                 net.minecraft.sounds.SoundSource.PLAYERS, 1.0f, 1.0f);
+        if (crossDimensional) {
+            destLevel.playSound(null, destAnchor,
+                    net.minecraft.sounds.SoundEvents.ENDERMAN_TELEPORT,
+                    net.minecraft.sounds.SoundSource.PLAYERS, 1.0f, 1.0f);
+        }
 
-        TrekCraftMod.LOGGER.debug("Entity {} teleported through wormhole {} to {}", entity.getName().getString(), portalId, destAnchor);
+        TrekCraftMod.LOGGER.debug("Entity {} teleported through wormhole {} to {} (dimension: {})",
+                entity.getName().getString(), portalId, destAnchor, destWormhole.dimensionKey());
     }
 
     /**
      * Link two portals together bidirectionally.
+     * Supports cross-dimensional linking.
      */
     public static boolean linkPortals(ServerLevel level, UUID portal1Id, UUID portal2Id) {
         TransporterNetworkSavedData data = TransporterNetworkSavedData.get(level);
@@ -193,17 +239,13 @@ public class WormholeService {
             return false;
         }
 
-        // Must be in same dimension
-        if (!portal1.dimensionKey().equals(portal2.dimensionKey())) {
-            return false;
-        }
-
-        // Update both portals with links
+        // Update both portals with links (cross-dimensional linking is allowed)
         data.updateWormhole(portal1.withLink(portal2Id));
         data.updateWormhole(portal2.withLink(portal1Id));
 
-        TrekCraftMod.LOGGER.info("Linked wormholes {} ({}) and {} ({})",
-                portal1.name(), portal1Id, portal2.name(), portal2Id);
+        TrekCraftMod.LOGGER.info("Linked wormholes {} ({}) in {} and {} ({}) in {}",
+                portal1.name(), portal1Id, portal1.dimensionKey(),
+                portal2.name(), portal2Id, portal2.dimensionKey());
         return true;
     }
 

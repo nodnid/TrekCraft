@@ -50,24 +50,11 @@ public class TransporterRoomBlock extends BaseEntityBlock {
         super.setPlacedBy(level, pos, state, placer, stack);
 
         if (!level.isClientSide && level instanceof ServerLevel serverLevel) {
-            // Check Overworld only
-            if (!serverLevel.dimension().equals(Level.OVERWORLD)) {
-                // Drop the item back and remove the block
-                level.removeBlock(pos, false);
-                if (placer instanceof Player player) {
-                    if (!player.getAbilities().instabuild) {
-                        player.addItem(stack.copy());
-                    }
-                    player.displayClientMessage(
-                            Component.literal("Transporter Room can only be placed in the Overworld."), false);
-                }
-                return;
-            }
-
             TransporterNetworkSavedData data = TransporterNetworkSavedData.get(serverLevel);
+            String dimensionKey = serverLevel.dimension().location().toString();
 
-            // Register this room in the network
-            data.registerRoom(pos);
+            // Register this room in the network with dimension
+            data.registerRoom(pos, dimensionKey);
 
             int roomCount = data.getRooms().size();
             if (placer instanceof Player player) {
