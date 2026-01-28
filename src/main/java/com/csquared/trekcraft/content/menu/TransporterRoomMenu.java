@@ -1,8 +1,10 @@
 package com.csquared.trekcraft.content.menu;
 
+import com.csquared.trekcraft.content.blockentity.TransporterRoomBlockEntity;
 import com.csquared.trekcraft.data.TransporterNetworkSavedData;
 import com.csquared.trekcraft.registry.ModItems;
 import com.csquared.trekcraft.registry.ModMenuTypes;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -13,6 +15,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.entity.BlockEntity;
 
 import java.util.UUID;
 
@@ -27,10 +30,20 @@ public class TransporterRoomMenu extends AbstractContainerMenu {
     private final int initialLatinumCount;
 
     /**
-     * Client-side constructor - creates a dummy container.
+     * Client-side constructor - reads block position from buffer and gets the block entity.
      */
     public TransporterRoomMenu(int containerId, Inventory playerInventory, FriendlyByteBuf buf) {
-        this(containerId, playerInventory, new SimpleContainer(27));
+        this(containerId, playerInventory, getContainerFromBuf(playerInventory, buf));
+    }
+
+    private static Container getContainerFromBuf(Inventory playerInventory, FriendlyByteBuf buf) {
+        BlockPos pos = buf.readBlockPos();
+        BlockEntity be = playerInventory.player.level().getBlockEntity(pos);
+        if (be instanceof TransporterRoomBlockEntity roomBE) {
+            return roomBE;
+        }
+        // Fallback to empty container if block entity not found
+        return new SimpleContainer(27);
     }
 
     /**

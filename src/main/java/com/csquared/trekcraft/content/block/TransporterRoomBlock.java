@@ -69,8 +69,8 @@ public class TransporterRoomBlock extends BaseEntityBlock {
         if (!level.isClientSide) {
             BlockEntity be = level.getBlockEntity(pos);
             if (be instanceof TransporterRoomBlockEntity roomBE) {
-                // Open the fuel container menu
-                player.openMenu(roomBE);
+                // Open the fuel container menu, passing block position for client sync
+                player.openMenu(roomBE, buf -> buf.writeBlockPos(pos));
             }
         }
         return InteractionResult.sidedSuccess(level.isClientSide);
