@@ -2,10 +2,13 @@ package com.csquared.trekcraft.command;
 
 import com.csquared.trekcraft.TrekCraftConfig;
 import com.csquared.trekcraft.content.item.TricorderItem;
+import com.csquared.trekcraft.data.ContributorRank;
 import com.csquared.trekcraft.data.TransporterNetworkSavedData;
+import com.csquared.trekcraft.data.TransporterNetworkSavedData.ContributorRecord;
 import com.csquared.trekcraft.data.TransporterNetworkSavedData.RoomRecord;
 import com.csquared.trekcraft.data.TransporterNetworkSavedData.SignalType;
 import com.csquared.trekcraft.data.TricorderData;
+import com.csquared.trekcraft.network.OpenContributionScreenPayload;
 import com.csquared.trekcraft.registry.ModDataComponents;
 import com.csquared.trekcraft.registry.ModItems;
 import com.csquared.trekcraft.service.ScanService;
@@ -27,7 +30,10 @@ import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
+import net.neoforged.neoforge.network.PacketDistributor;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 public class TrekCommands {
@@ -71,6 +77,14 @@ public class TrekCommands {
                         // Scan
                         .then(Commands.literal("scan")
                                 .executes(TrekCommands::scan))
+
+                        // Contribution commands
+                        .then(Commands.literal("contribution")
+                                .executes(TrekCommands::openContributionScreen)
+                                .then(Commands.literal("status")
+                                        .executes(TrekCommands::openContributionScreen))
+                                .then(Commands.literal("leaderboard")
+                                        .executes(TrekCommands::openContributionScreen)))
         );
     }
 
@@ -377,5 +391,55 @@ public class TrekCommands {
                     .withStyle(ChatFormatting.RED));
         }
         return result == ScanService.ScanResult.SUCCESS ? 1 : 0;
+    }
+
+    // Contribution command - opens GUI screen
+    private static int openContributionScreen(CommandContext<CommandSourceStack> ctx) {
+        ServerPlayer player = ctx.getSource().getPlayer();
+        if (player == null) return 0;
+
+        ServerLevel level = (ServerLevel) player.level();
+        TransporterNetworkSavedData data = TransporterNetworkSavedData.get(level);
+
+        // Get player's contribution data
+        var contributorOpt = data.getContributor(player.getUUID());
+
+        long totalDeposited = 0;
+        long totalWithdrawn = 0;
+        int freeTransportsUsed = 0;
+        String highestRankName = ContributorRank.CREWMAN.name();
+
+        if (contributorOpt.isPresent()) {
+            ContributorRecord record = contributorOpt.get();
+            totalDeposited = record.totalDeposited();
+            totalWithdrawn = record.totalWithdrawn();
+            freeTransportsUsed = record.freeTransportsUsed();
+            highestRankName = record.highestRankAchieved().name();
+        }
+
+        // Get leaderboard data
+        var topContributors = data.getTopContributors(10);
+        List<OpenContributionScreenPayload.LeaderboardEntry> leaderboard = new ArrayList<>();
+        for (ContributorRecord record : topContributors) {
+            if (record.getNetContribution() > 0) {
+                leaderboard.add(new OpenContributionScreenPayload.LeaderboardEntry(
+                        record.lastKnownName(),
+                        record.getNetContribution(),
+                        record.highestRankAchieved().name()
+                ));
+            }
+        }
+
+        // Send payload to client
+        OpenContributionScreenPayload payload = new OpenContributionScreenPayload(
+                totalDeposited,
+                totalWithdrawn,
+                freeTransportsUsed,
+                highestRankName,
+                leaderboard
+        );
+
+        PacketDistributor.sendToPlayer(player, payload);
+        return 1;
     }
 }

@@ -8,6 +8,7 @@ import com.csquared.trekcraft.data.TransporterNetworkSavedData.SignalRecord;
 import com.csquared.trekcraft.data.TransporterNetworkSavedData.SignalType;
 import com.csquared.trekcraft.util.SafeTeleportFinder;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -171,14 +172,21 @@ public class TransportService {
                                                      BlockPos roomPos) {
         // Consume fuel (unless creative)
         if (!player.isCreative()) {
-            if (!data.consumeRoomFuel(roomPos, 1)) {
-                return TransportResult.INSUFFICIENT_FUEL;
-            }
+            // Check for free transport first
+            if (data.consumeFreeTransport(player.getUUID())) {
+                // Free transport used - skip fuel consumption
+                player.displayClientMessage(Component.literal("Free transport used!"), true);
+            } else {
+                // Normal fuel consumption
+                if (!data.consumeRoomFuel(roomPos, 1)) {
+                    return TransportResult.INSUFFICIENT_FUEL;
+                }
 
-            // If room block entity is loaded, also remove from inventory
-            if (level.isLoaded(roomPos)) {
-                if (level.getBlockEntity(roomPos) instanceof TransporterRoomBlockEntity roomBE) {
-                    roomBE.removeStrips(1);
+                // If room block entity is loaded, also remove from inventory
+                if (level.isLoaded(roomPos)) {
+                    if (level.getBlockEntity(roomPos) instanceof TransporterRoomBlockEntity roomBE) {
+                        roomBE.removeStrips(1);
+                    }
                 }
             }
         }

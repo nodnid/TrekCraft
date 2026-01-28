@@ -4,6 +4,7 @@ import com.csquared.trekcraft.registry.ModBlocks;
 import com.csquared.trekcraft.registry.ModBlockEntities;
 import com.csquared.trekcraft.registry.ModDataComponents;
 import com.csquared.trekcraft.registry.ModItems;
+import com.csquared.trekcraft.registry.ModMenuTypes;
 import com.csquared.trekcraft.registry.ModCreativeTabs;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
@@ -28,6 +29,7 @@ public class TrekCraftMod {
         ModBlocks.register(modEventBus);
         ModItems.register(modEventBus);
         ModBlockEntities.register(modEventBus);
+        ModMenuTypes.register(modEventBus);
         ModCreativeTabs.register(modEventBus);
     }
 }

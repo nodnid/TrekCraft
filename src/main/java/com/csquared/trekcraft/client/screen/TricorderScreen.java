@@ -193,6 +193,15 @@ public class TricorderScreen extends Screen {
         ).bounds(buttonX, buttonY, BUTTON_WIDTH, BUTTON_HEIGHT)
                 .colors(LCARSRenderer.LAVENDER, LCARSRenderer.PURPLE)
                 .build());
+
+        // Contribution Status button
+        buttonY += BUTTON_HEIGHT + BUTTON_SPACING;
+        addRenderableWidget(LCARSButton.lcarsBuilder(
+                Component.literal("STARFLEET RANK"),
+                button -> executeCommand("trek contribution")
+        ).bounds(buttonX, buttonY, BUTTON_WIDTH, BUTTON_HEIGHT)
+                .colors(LCARSRenderer.PEACH, LCARSRenderer.ORANGE)
+                .build());
     }
 
     /**

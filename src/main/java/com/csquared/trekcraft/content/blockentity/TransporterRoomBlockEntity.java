@@ -1,5 +1,6 @@
 package com.csquared.trekcraft.content.blockentity;
 
+import com.csquared.trekcraft.content.menu.TransporterRoomMenu;
 import com.csquared.trekcraft.data.TransporterNetworkSavedData;
 import com.csquared.trekcraft.registry.ModBlockEntities;
 import com.csquared.trekcraft.registry.ModItems;
@@ -17,8 +18,6 @@ import net.minecraft.world.MenuProvider;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.inventory.ChestMenu;
-import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BaseContainerBlockEntity;
@@ -130,7 +129,7 @@ public class TransporterRoomBlockEntity extends BaseContainerBlockEntity impleme
 
     @Override
     protected AbstractContainerMenu createMenu(int containerId, Inventory playerInventory) {
-        return ChestMenu.threeRows(containerId, playerInventory, this);
+        return new TransporterRoomMenu(containerId, playerInventory, this);
     }
 
     @Override

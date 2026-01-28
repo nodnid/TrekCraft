@@ -95,4 +95,12 @@ public class ClientPayloadHandler {
             );
         });
     }
+
+    public static void openContributionScreen(com.csquared.trekcraft.network.OpenContributionScreenPayload payload) {
+        Minecraft.getInstance().execute(() -> {
+            Minecraft.getInstance().setScreen(
+                    new com.csquared.trekcraft.client.screen.ContributionScreen(payload)
+            );
+        });
+    }
 }

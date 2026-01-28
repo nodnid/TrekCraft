@@ -12,7 +12,15 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.saveddata.SavedData;
 import org.jetbrains.annotations.Nullable;
 
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.network.chat.Component;
+import net.minecraft.ChatFormatting;
+
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class TransporterNetworkSavedData extends SavedData {
     private static final String DATA_NAME = TrekCraftMod.MODID + "_transporter_network";
@@ -28,6 +36,9 @@ public class TransporterNetworkSavedData extends SavedData {
 
     // Wormhole portals
     private final Map<UUID, WormholeRecord> wormholes = new HashMap<>();
+
+    // Player contribution tracking
+    private final Map<UUID, ContributorRecord> contributors = new HashMap<>();
 
     public TransporterNetworkSavedData() {
     }
@@ -145,6 +156,30 @@ public class TransporterNetworkSavedData extends SavedData {
             }
         }
 
+        // Load contributors
+        if (tag.contains("Contributors", Tag.TAG_LIST)) {
+            ListTag contributorsTag = tag.getList("Contributors", Tag.TAG_COMPOUND);
+            for (int i = 0; i < contributorsTag.size(); i++) {
+                CompoundTag contribTag = contributorsTag.getCompound(i);
+                UUID playerId = contribTag.getUUID("PlayerId");
+                String lastKnownName = contribTag.getString("LastKnownName");
+                long totalDeposited = contribTag.getLong("TotalDeposited");
+                long totalWithdrawn = contribTag.getLong("TotalWithdrawn");
+                long lastActivityTime = contribTag.getLong("LastActivityTime");
+                int freeTransportsUsed = contribTag.getInt("FreeTransportsUsed");
+                ContributorRank highestRank = ContributorRank.CREWMAN;
+                if (contribTag.contains("HighestRank")) {
+                    try {
+                        highestRank = ContributorRank.valueOf(contribTag.getString("HighestRank"));
+                    } catch (IllegalArgumentException ignored) {}
+                }
+                data.contributors.put(playerId, new ContributorRecord(
+                        playerId, lastKnownName, totalDeposited, totalWithdrawn,
+                        lastActivityTime, freeTransportsUsed, highestRank
+                ));
+            }
+        }
+
         return data;
     }
 
@@ -217,6 +252,21 @@ public class TransporterNetworkSavedData extends SavedData {
             wormholesTag.add(wormholeTag);
         }
         tag.put("Wormholes", wormholesTag);
+
+        // Save contributors
+        ListTag contributorsTag = new ListTag();
+        for (ContributorRecord contrib : contributors.values()) {
+            CompoundTag contribTag = new CompoundTag();
+            contribTag.putUUID("PlayerId", contrib.playerId());
+            contribTag.putString("LastKnownName", contrib.lastKnownName());
+            contribTag.putLong("TotalDeposited", contrib.totalDeposited());
+            contribTag.putLong("TotalWithdrawn", contrib.totalWithdrawn());
+            contribTag.putLong("LastActivityTime", contrib.lastActivityTime());
+            contribTag.putInt("FreeTransportsUsed", contrib.freeTransportsUsed());
+            contribTag.putString("HighestRank", contrib.highestRankAchieved().name());
+            contributorsTag.add(contribTag);
+        }
+        tag.put("Contributors", contributorsTag);
 
         return tag;
     }
@@ -563,5 +613,198 @@ public class TransporterNetworkSavedData extends SavedData {
     public enum SignalType {
         DROPPED,
         HELD
+    }
+
+    public record ContributorRecord(
+            UUID playerId,
+            String lastKnownName,
+            long totalDeposited,
+            long totalWithdrawn,
+            long lastActivityTime,
+            int freeTransportsUsed,
+            ContributorRank highestRankAchieved
+    ) {
+        /**
+         * Net contribution = deposited - withdrawn
+         */
+        public long getNetContribution() {
+            return totalDeposited - totalWithdrawn;
+        }
+
+        /**
+         * Free transports = net / 10 - used
+         */
+        public int getFreeTransportsRemaining() {
+            return Math.max(0, (int)(getNetContribution() / 10) - freeTransportsUsed);
+        }
+
+        /**
+         * Get total earned free transports (net / 10)
+         */
+        public int getTotalFreeTransportsEarned() {
+            return (int)(getNetContribution() / 10);
+        }
+    }
+
+    // ===== Contributor methods =====
+
+    /**
+     * Record a deposit of latinum strips by a player.
+     */
+    public void recordDeposit(UUID playerId, String playerName, int amount) {
+        ContributorRecord existing = contributors.get(playerId);
+        if (existing == null) {
+            contributors.put(playerId, new ContributorRecord(
+                    playerId, playerName, amount, 0,
+                    System.currentTimeMillis(), 0, ContributorRank.CREWMAN
+            ));
+        } else {
+            contributors.put(playerId, new ContributorRecord(
+                    playerId, playerName,
+                    existing.totalDeposited() + amount,
+                    existing.totalWithdrawn(),
+                    System.currentTimeMillis(),
+                    existing.freeTransportsUsed(),
+                    existing.highestRankAchieved()
+            ));
+        }
+        setDirty();
+    }
+
+    /**
+     * Record a withdrawal of latinum strips by a player.
+     */
+    public void recordWithdrawal(UUID playerId, String playerName, int amount) {
+        ContributorRecord existing = contributors.get(playerId);
+        if (existing == null) {
+            contributors.put(playerId, new ContributorRecord(
+                    playerId, playerName, 0, amount,
+                    System.currentTimeMillis(), 0, ContributorRank.CREWMAN
+            ));
+        } else {
+            contributors.put(playerId, new ContributorRecord(
+                    playerId, playerName,
+                    existing.totalDeposited(),
+                    existing.totalWithdrawn() + amount,
+                    System.currentTimeMillis(),
+                    existing.freeTransportsUsed(),
+                    existing.highestRankAchieved()
+            ));
+        }
+        setDirty();
+    }
+
+    /**
+     * Get a contributor record by player ID.
+     */
+    public Optional<ContributorRecord> getContributor(UUID playerId) {
+        return Optional.ofNullable(contributors.get(playerId));
+    }
+
+    /**
+     * Consume a free transport for a player.
+     * @return true if a free transport was available and consumed, false otherwise
+     */
+    public boolean consumeFreeTransport(UUID playerId) {
+        ContributorRecord existing = contributors.get(playerId);
+        if (existing == null || existing.getFreeTransportsRemaining() <= 0) {
+            return false;
+        }
+
+        contributors.put(playerId, new ContributorRecord(
+                existing.playerId(),
+                existing.lastKnownName(),
+                existing.totalDeposited(),
+                existing.totalWithdrawn(),
+                existing.lastActivityTime(),
+                existing.freeTransportsUsed() + 1,
+                existing.highestRankAchieved()
+        ));
+        setDirty();
+        return true;
+    }
+
+    /**
+     * Get top contributors sorted by net contribution.
+     */
+    public List<ContributorRecord> getTopContributors(int limit) {
+        return contributors.values().stream()
+                .sorted((a, b) -> Long.compare(b.getNetContribution(), a.getNetContribution()))
+                .limit(limit)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Check if a player has achieved a new rank and award diamonds if so.
+     * Should be called after recordDeposit.
+     * @return the new rank if promoted, null if no promotion
+     */
+    public ContributorRank checkAndAwardRankUp(UUID playerId, ServerPlayer player) {
+        ContributorRecord record = contributors.get(playerId);
+        if (record == null) {
+            return null;
+        }
+
+        ContributorRank currentRank = ContributorRank.forContribution(record.getNetContribution());
+        ContributorRank previousHighest = record.highestRankAchieved();
+
+        // Check if we've achieved a new highest rank
+        if (currentRank.ordinal() > previousHighest.ordinal()) {
+            // Update the highest rank achieved
+            contributors.put(playerId, new ContributorRecord(
+                    record.playerId(),
+                    record.lastKnownName(),
+                    record.totalDeposited(),
+                    record.totalWithdrawn(),
+                    record.lastActivityTime(),
+                    record.freeTransportsUsed(),
+                    currentRank
+            ));
+            setDirty();
+
+            // Award diamonds for the rank-up
+            int diamondReward = currentRank.getDiamondReward();
+            if (diamondReward > 0 && player != null) {
+                ItemStack diamonds = new ItemStack(Items.DIAMOND, diamondReward);
+                if (!player.getInventory().add(diamonds)) {
+                    // Drop at player's feet if inventory is full
+                    ItemEntity itemEntity = new ItemEntity(
+                            player.level(),
+                            player.getX(), player.getY(), player.getZ(),
+                            diamonds
+                    );
+                    player.level().addFreshEntity(itemEntity);
+                }
+
+                // Send rank-up message
+                player.sendSystemMessage(
+                        Component.literal("★ PROMOTION ★ ")
+                                .withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD)
+                                .append(Component.literal("You have achieved the rank of ")
+                                        .withStyle(ChatFormatting.YELLOW, ChatFormatting.BOLD))
+                                .append(Component.literal(currentRank.getTitle())
+                                        .withStyle(ChatFormatting.AQUA, ChatFormatting.BOLD))
+                                .append(Component.literal("!")
+                                        .withStyle(ChatFormatting.YELLOW, ChatFormatting.BOLD))
+                );
+                player.sendSystemMessage(
+                        Component.literal("Reward: ")
+                                .withStyle(ChatFormatting.GRAY)
+                                .append(Component.literal(diamondReward + " Diamond" + (diamondReward > 1 ? "s" : ""))
+                                        .withStyle(ChatFormatting.AQUA))
+                );
+            }
+
+            return currentRank;
+        }
+
+        return null;
+    }
+
+    /**
+     * Get all contributors.
+     */
+    public Map<UUID, ContributorRecord> getContributors() {
+        return Collections.unmodifiableMap(contributors);
     }
 }

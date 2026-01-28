@@ -105,6 +105,16 @@ public class ModPayloads {
                     handleLinkWormholes(player, payload);
                 }
         );
+
+        registrar.playToClient(
+                OpenContributionScreenPayload.TYPE,
+                OpenContributionScreenPayload.STREAM_CODEC,
+                (payload, context) -> {
+                    if (FMLEnvironment.dist == Dist.CLIENT) {
+                        handleOpenContributionScreenOnClient(payload);
+                    }
+                }
+        );
     }
 
     // This method uses a fully qualified class name string to defer class loading
@@ -234,6 +244,15 @@ public class ModPayloads {
         } else {
             player.displayClientMessage(
                     Component.literal("Failed to link wormholes"), true);
+        }
+    }
+
+    private static void handleOpenContributionScreenOnClient(OpenContributionScreenPayload payload) {
+        try {
+            Class<?> handlerClass = Class.forName("com.csquared.trekcraft.client.ClientPayloadHandler");
+            handlerClass.getMethod("openContributionScreen", OpenContributionScreenPayload.class).invoke(null, payload);
+        } catch (Exception e) {
+            TrekCraftMod.LOGGER.error("Failed to open contribution screen", e);
         }
     }
 }
