@@ -1,6 +1,7 @@
 package com.csquared.trekcraft.registry;
 
 import com.csquared.trekcraft.TrekCraftMod;
+import com.csquared.trekcraft.content.item.HolodeckArchItem;
 import com.csquared.trekcraft.content.item.TricorderItem;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
@@ -49,9 +50,9 @@ public class ModItems {
             ModBlocks.HOLODECK_EMITTER
     );
 
-    public static final DeferredItem<BlockItem> HOLODECK_CONTROLLER = ITEMS.registerSimpleBlockItem(
+    public static final DeferredItem<BlockItem> HOLODECK_CONTROLLER = ITEMS.register(
             "holodeck_controller",
-            ModBlocks.HOLODECK_CONTROLLER
+            () -> new HolodeckArchItem(ModBlocks.HOLODECK_CONTROLLER.get(), new Item.Properties())
     );
 
     public static void register(IEventBus eventBus) {

@@ -92,14 +92,11 @@ public class HolodeckControllerBlock extends BaseEntityBlock {
         if (!level.isClientSide && level instanceof ServerLevel serverLevel) {
             BlockEntity be = level.getBlockEntity(pos);
             if (be instanceof HolodeckControllerBlockEntity controller) {
-                // Attempt to validate and activate the holodeck frame
-                boolean valid = controller.validateAndActivateFrame();
-                if (valid && placer instanceof ServerPlayer serverPlayer) {
+                // Note: Arch is auto-placed by HolodeckArchItem, controller doesn't auto-activate
+                // Player must build emitter walls and add doors before activation
+                if (placer instanceof ServerPlayer serverPlayer) {
                     serverPlayer.displayClientMessage(
-                            Component.literal("Holodeck activated! Frame detected."), true);
-                } else if (!valid && placer instanceof ServerPlayer serverPlayer) {
-                    serverPlayer.displayClientMessage(
-                            Component.literal("Place controller adjacent to a complete emitter frame."), true);
+                            Component.literal("Build emitter walls around the room and add doors to activate."), true);
                 }
             }
         }
@@ -115,7 +112,7 @@ public class HolodeckControllerBlock extends BaseEntityBlock {
                     boolean valid = controller.validateAndActivateFrame();
                     if (!valid) {
                         player.displayClientMessage(
-                                Component.literal("Holodeck frame invalid. Ensure emitters form a complete rectangular frame."), true);
+                                Component.literal("Holodeck invalid. Ensure all walls are filled with emitters and doors are placed in the arch."), true);
                         return InteractionResult.CONSUME;
                     }
                 }
