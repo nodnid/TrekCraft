@@ -1,17 +1,16 @@
 {
   "type": "minecraft:crafting_shaped",
   "pattern": [
-    "IGI",
-    "GDG",
-    "IGI"
+    "IRI",
+    "RIR",
+    "IRI"
   ],
   "key": {
     "I": {"item": "minecraft:iron_ingot"},
-    "G": {"item": "minecraft:glowstone_dust"},
-    "D": {"item": "minecraft:diamond"}
+    "R": {"item": "minecraft:redstone"}
   },
   "result": {
     "id": "trekcraft:holodeck_emitter",
-    "count": 4
+    "count": 64
   }
 }

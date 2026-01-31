@@ -20,6 +20,7 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
+import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
 @EventBusSubscriber(modid = TrekCraftMod.MODID, bus = EventBusSubscriber.Bus.MOD)
@@ -162,6 +163,17 @@ public class ModPayloads {
                 (payload, context) -> {
                     ServerPlayer player = (ServerPlayer) context.player();
                     handleClearHolodeck(player, payload);
+                }
+        );
+
+        // Server->Client: Sync holoprogram to client's local schematics folder
+        registrar.playToClient(
+                SyncHoloprogramPayload.TYPE,
+                SyncHoloprogramPayload.STREAM_CODEC,
+                (payload, context) -> {
+                    if (FMLEnvironment.dist == Dist.CLIENT) {
+                        handleSyncHoloprogramOnClient(payload);
+                    }
                 }
         );
     }
@@ -314,6 +326,16 @@ public class ModPayloads {
         }
     }
 
+    private static void handleSyncHoloprogramOnClient(SyncHoloprogramPayload payload) {
+        // Save the schematic data to the client's local schematics folder
+        boolean success = HoloprogramManager.saveLocal(payload.programName(), payload.schematicData());
+        if (success) {
+            TrekCraftMod.LOGGER.info("Synced holoprogram '{}' to local schematics folder", payload.programName());
+        } else {
+            TrekCraftMod.LOGGER.warn("Failed to sync holoprogram '{}' to local schematics folder", payload.programName());
+        }
+    }
+
     private static void handleSaveHoloprogram(ServerPlayer player, SaveHoloprogramPayload payload) {
         ServerLevel level = player.serverLevel();
 
@@ -326,10 +348,16 @@ public class ModPayloads {
 
         BlockEntity be = level.getBlockEntity(payload.controllerPos());
         if (be instanceof HolodeckControllerBlockEntity controller) {
-            boolean success = controller.saveHoloprogram(payload.programName());
-            if (success) {
+            HoloprogramManager.SaveResult result = controller.saveHoloprogram(payload.programName());
+            if (result.success()) {
                 player.displayClientMessage(
                         Component.literal("Holoprogram saved: " + payload.programName()), true);
+
+                // Send schematic data to client for local saving
+                if (result.nbtData() != null) {
+                    PacketDistributor.sendToPlayer(player,
+                            new SyncHoloprogramPayload(payload.programName(), result.nbtData()));
+                }
             } else {
                 player.displayClientMessage(
                         Component.literal("Failed to save holoprogram"), true);

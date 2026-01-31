@@ -81,15 +81,32 @@ public class HoloprogramManager {
      * Get the schematics directory path.
      */
     private static Path getSchematicsDir() {
-        Path dir = FMLPaths.GAMEDIR.get().resolve(SCHEMATICS_DIR);
+        Path gameDir = FMLPaths.GAMEDIR.get();
+        Path dir = gameDir.resolve(SCHEMATICS_DIR);
+        TrekCraftMod.LOGGER.info("GAMEDIR: {}", gameDir.toAbsolutePath());
+        TrekCraftMod.LOGGER.info("Schematics dir: {}", dir.toAbsolutePath());
         if (!Files.exists(dir)) {
             try {
                 Files.createDirectories(dir);
+                TrekCraftMod.LOGGER.info("Created schematics directory: {}", dir.toAbsolutePath());
             } catch (IOException e) {
                 TrekCraftMod.LOGGER.error("Failed to create schematics directory", e);
             }
         }
         return dir;
+    }
+
+    /**
+     * Result of a save operation, containing success status and NBT data for syncing.
+     */
+    public record SaveResult(boolean success, @Nullable CompoundTag nbtData) {
+        public static SaveResult failure() {
+            return new SaveResult(false, null);
+        }
+
+        public static SaveResult success(CompoundTag nbt) {
+            return new SaveResult(true, nbt);
+        }
     }
 
     /**
@@ -99,9 +116,9 @@ public class HoloprogramManager {
      * @param name The holoprogram name
      * @param min The minimum corner of the interior
      * @param max The maximum corner of the interior
-     * @return true if save was successful
+     * @return SaveResult with success status and NBT data for client sync
      */
-    public static boolean save(ServerLevel level, String name, BlockPos min, BlockPos max) {
+    public static SaveResult save(ServerLevel level, String name, BlockPos min, BlockPos max) {
         try {
             // Calculate size
             Vec3i size = new Vec3i(
@@ -131,10 +148,34 @@ public class HoloprogramManager {
             NbtIo.writeCompressed(nbt, filePath);
 
             TrekCraftMod.LOGGER.info("Saved holoprogram '{}' to {}", name, filePath);
-            return true;
+            return SaveResult.success(nbt);
 
         } catch (Exception e) {
             TrekCraftMod.LOGGER.error("Failed to save holoprogram '{}'", name, e);
+            return SaveResult.failure();
+        }
+    }
+
+    /**
+     * Save schematic data locally (client-side).
+     * Used to sync holoprograms from server to client's local schematics folder.
+     *
+     * @param name The holoprogram name
+     * @param nbt The schematic NBT data
+     * @return true if save was successful
+     */
+    public static boolean saveLocal(String name, CompoundTag nbt) {
+        try {
+            String fileName = sanitizeFileName(name) + ".nbt";
+            Path filePath = getSchematicsDir().resolve(fileName);
+
+            NbtIo.writeCompressed(nbt, filePath);
+
+            TrekCraftMod.LOGGER.info("Saved holoprogram locally '{}' to {}", name, filePath);
+            return true;
+
+        } catch (Exception e) {
+            TrekCraftMod.LOGGER.error("Failed to save holoprogram locally '{}'", name, e);
             return false;
         }
     }

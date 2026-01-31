@@ -488,10 +488,11 @@ public class HolodeckControllerBlockEntity extends BlockEntity {
 
     /**
      * Save a holoprogram from the current interior.
+     * @return SaveResult with success status and NBT data for client sync
      */
-    public boolean saveHoloprogram(String name) {
-        if (!active || level == null || level.isClientSide) return false;
-        if (interiorMin == null || interiorMax == null) return false;
+    public HoloprogramManager.SaveResult saveHoloprogram(String name) {
+        if (!active || level == null || level.isClientSide) return HoloprogramManager.SaveResult.failure();
+        if (interiorMin == null || interiorMax == null) return HoloprogramManager.SaveResult.failure();
 
         return HoloprogramManager.save((ServerLevel) level, name, interiorMin, interiorMax);
     }
