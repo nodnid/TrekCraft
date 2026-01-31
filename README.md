@@ -26,6 +26,15 @@ Create linked portal pairs for instant bidirectional travel between locations.
 - **Bidirectional Links** - Step through one portal to arrive at its linked partner
 - **Persistent Network** - Portals remain active across play sessions
 
+### Holodeck
+Build a creative-mode sandbox room for designing and testing builds.
+
+- **Emitter Frame** - Construct a room using Holodeck Emitters with a Controller block
+- **Creative Mode Interior** - Players inside automatically switch to creative mode
+- **Holoprogram Save/Load** - Save interior builds as schematics and load them later
+- **Size Validation** - Schematics that are too large for the holodeck show helpful error messages
+- **Safe Deactivation** - Interior clears when holodeck is broken, preventing item exploitation
+
 ## Requirements
 
 - Minecraft 1.21.1
@@ -86,6 +95,8 @@ Right-click with the tricorder to open the LCARS-style menu:
 | **Transporter Pad** | Teleportation destination marker - place and name these around your world |
 | **Transporter Room** | Fuel storage and network controller - one per world, Overworld only |
 | **Latinum Bar** | Decorative storage block |
+| **Holodeck Emitter** | Frame block for holodeck rooms - forms the walls, floor, and ceiling |
+| **Holodeck Controller** | Control panel for holodeck - must be part of the frame, accessible from both sides |
 
 ## Commands
 

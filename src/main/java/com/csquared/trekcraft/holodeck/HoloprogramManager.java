@@ -3,6 +3,7 @@ package com.csquared.trekcraft.holodeck;
 import com.csquared.trekcraft.TrekCraftMod;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Vec3i;
+import org.jetbrains.annotations.Nullable;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -40,6 +41,41 @@ public class HoloprogramManager {
 
     private static final String SCHEMATICS_DIR = "schematics";
     private static final String HOLOPROGRAM_PREFIX = "holoprogram_";
+
+    /**
+     * Result codes for holoprogram load operations.
+     */
+    public enum LoadResult {
+        SUCCESS,
+        NOT_FOUND,
+        TOO_LARGE,
+        READ_ERROR
+    }
+
+    /**
+     * Detailed result of a holoprogram load operation.
+     */
+    public record LoadResultDetails(
+            LoadResult result,
+            @Nullable Vec3i schematicSize,
+            @Nullable Vec3i interiorSize
+    ) {
+        public static LoadResultDetails success() {
+            return new LoadResultDetails(LoadResult.SUCCESS, null, null);
+        }
+
+        public static LoadResultDetails notFound() {
+            return new LoadResultDetails(LoadResult.NOT_FOUND, null, null);
+        }
+
+        public static LoadResultDetails tooLarge(Vec3i schematicSize, Vec3i interiorSize) {
+            return new LoadResultDetails(LoadResult.TOO_LARGE, schematicSize, interiorSize);
+        }
+
+        public static LoadResultDetails readError() {
+            return new LoadResultDetails(LoadResult.READ_ERROR, null, null);
+        }
+    }
 
     /**
      * Get the schematics directory path.
@@ -109,16 +145,17 @@ public class HoloprogramManager {
      * @param level The server level
      * @param name The holoprogram name
      * @param origin The position to place the structure (interior min corner)
-     * @return true if load was successful
+     * @param interiorSize The size of the holodeck interior for validation
+     * @return LoadResultDetails with status and size information
      */
-    public static boolean load(ServerLevel level, String name, BlockPos origin) {
+    public static LoadResultDetails load(ServerLevel level, String name, BlockPos origin, Vec3i interiorSize) {
         try {
             String fileName = sanitizeFileName(name) + ".nbt";
             Path filePath = getSchematicsDir().resolve(fileName);
 
             if (!Files.exists(filePath)) {
                 TrekCraftMod.LOGGER.warn("Holoprogram '{}' not found at {}", name, filePath);
-                return false;
+                return LoadResultDetails.notFound();
             }
 
             // Read NBT
@@ -127,6 +164,18 @@ public class HoloprogramManager {
             // Create structure template and load
             StructureTemplate template = new StructureTemplate();
             template.load(BuiltInRegistries.BLOCK.asLookup(), nbt);
+
+            // Get schematic size and validate against interior
+            Vec3i schematicSize = template.getSize();
+            if (schematicSize.getX() > interiorSize.getX() ||
+                schematicSize.getY() > interiorSize.getY() ||
+                schematicSize.getZ() > interiorSize.getZ()) {
+                TrekCraftMod.LOGGER.warn("Holoprogram '{}' too large ({}x{}x{}) for holodeck ({}x{}x{})",
+                        name,
+                        schematicSize.getX(), schematicSize.getY(), schematicSize.getZ(),
+                        interiorSize.getX(), interiorSize.getY(), interiorSize.getZ());
+                return LoadResultDetails.tooLarge(schematicSize, interiorSize);
+            }
 
             // Create placement settings
             StructurePlaceSettings settings = new StructurePlaceSettings()
@@ -139,11 +188,11 @@ public class HoloprogramManager {
             template.placeInWorld(level, origin, origin, settings, RandomSource.create(), 2);
 
             TrekCraftMod.LOGGER.info("Loaded holoprogram '{}' at {}", name, origin);
-            return true;
+            return LoadResultDetails.success();
 
         } catch (Exception e) {
             TrekCraftMod.LOGGER.error("Failed to load holoprogram '{}'", name, e);
-            return false;
+            return LoadResultDetails.readError();
         }
     }
 

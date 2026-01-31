@@ -3,6 +3,7 @@ package com.csquared.trekcraft.network;
 import com.csquared.trekcraft.TrekCraftMod;
 import com.csquared.trekcraft.content.blockentity.HolodeckControllerBlockEntity;
 import com.csquared.trekcraft.content.blockentity.TransporterPadBlockEntity;
+import com.csquared.trekcraft.holodeck.HoloprogramManager;
 import com.csquared.trekcraft.data.TransporterNetworkSavedData;
 import com.csquared.trekcraft.data.TricorderData;
 import com.csquared.trekcraft.registry.ModDataComponents;
@@ -347,14 +348,22 @@ public class ModPayloads {
 
         BlockEntity be = level.getBlockEntity(payload.controllerPos());
         if (be instanceof HolodeckControllerBlockEntity controller) {
-            boolean success = controller.loadHoloprogram(payload.programName());
-            if (success) {
+            HoloprogramManager.LoadResultDetails result = controller.loadHoloprogram(payload.programName());
+            if (result == null) {
                 player.displayClientMessage(
-                        Component.literal("Holoprogram loaded: " + payload.programName()), true);
-            } else {
-                player.displayClientMessage(
-                        Component.literal("Failed to load holoprogram"), true);
+                        Component.literal("Holodeck not active"), true);
+                return;
             }
+
+            String message = switch (result.result()) {
+                case SUCCESS -> "Holoprogram loaded: " + payload.programName();
+                case NOT_FOUND -> "Holoprogram not found: " + payload.programName();
+                case TOO_LARGE -> String.format("Schematic too large (%dx%dx%d) for holodeck (%dx%dx%d)",
+                        result.schematicSize().getX(), result.schematicSize().getY(), result.schematicSize().getZ(),
+                        result.interiorSize().getX(), result.interiorSize().getY(), result.interiorSize().getZ());
+                case READ_ERROR -> "Failed to load holoprogram";
+            };
+            player.displayClientMessage(Component.literal(message), true);
         }
     }
 
