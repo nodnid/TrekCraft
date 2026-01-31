@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "active=false": {
+      "model": "trekcraft:block/holodeck_emitter"
+    },
+    "active=true": {
+      "model": "trekcraft:block/holodeck_emitter_active"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "parent": "minecraft:block/cube",
+  "textures": {
+    "north": "trekcraft:block/transporter_room_top",
+    "south": "trekcraft:block/emiter",
+    "east": "trekcraft:block/emiter",
+    "west": "trekcraft:block/emiter",
+    "up": "trekcraft:block/emiter",
+    "down": "trekcraft:block/emiter",
+    "particle": "trekcraft:block/emiter"
+  }
+}

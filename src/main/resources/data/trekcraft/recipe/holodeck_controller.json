@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "EBE",
+    "BRB",
+    "EBE"
+  ],
+  "key": {
+    "E": {"item": "trekcraft:holodeck_emitter"},
+    "B": {"item": "trekcraft:latinum_bar"},
+    "R": {"item": "minecraft:redstone_block"}
+  },
+  "result": {
+    "id": "trekcraft:holodeck_controller",
+    "count": 1
+  }
+}

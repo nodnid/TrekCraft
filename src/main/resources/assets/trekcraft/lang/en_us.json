@@ -9,9 +9,12 @@
   "block.trekcraft.transporter_pad": "Transporter Pad",
   "block.trekcraft.transporter_room": "Transporter Room",
   "block.trekcraft.wormhole_portal": "Wormhole Portal",
+  "block.trekcraft.holodeck_emitter": "Holodeck Emitter",
+  "block.trekcraft.holodeck_controller": "Holodeck Controller",
 
   "container.trekcraft.transporter_room": "Transporter Room",
   "screen.trekcraft.tricorder": "Tricorder",
   "screen.trekcraft.naming": "Name",
-  "screen.trekcraft.wormhole_link": "Link Wormhole"
+  "screen.trekcraft.wormhole_link": "Link Wormhole",
+  "screen.trekcraft.holodeck": "Holodeck Control"
 }

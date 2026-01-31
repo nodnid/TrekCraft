@@ -1,6 +1,7 @@
 package com.csquared.trekcraft.registry;
 
 import com.csquared.trekcraft.TrekCraftMod;
+import com.csquared.trekcraft.content.blockentity.HolodeckControllerBlockEntity;
 import com.csquared.trekcraft.content.blockentity.TransporterPadBlockEntity;
 import com.csquared.trekcraft.content.blockentity.TransporterRoomBlockEntity;
 import com.csquared.trekcraft.content.blockentity.WormholePortalBlockEntity;
@@ -36,6 +37,14 @@ public class ModBlockEntities {
                     () -> BlockEntityType.Builder.of(
                             WormholePortalBlockEntity::new,
                             ModBlocks.WORMHOLE_PORTAL.get()
+                    ).build(null)
+            );
+
+    public static final Supplier<BlockEntityType<HolodeckControllerBlockEntity>> HOLODECK_CONTROLLER =
+            BLOCK_ENTITIES.register("holodeck_controller",
+                    () -> BlockEntityType.Builder.of(
+                            HolodeckControllerBlockEntity::new,
+                            ModBlocks.HOLODECK_CONTROLLER.get()
                     ).build(null)
             );
 

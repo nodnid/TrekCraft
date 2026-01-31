@@ -1,6 +1,7 @@
 package com.csquared.trekcraft.network;
 
 import com.csquared.trekcraft.TrekCraftMod;
+import com.csquared.trekcraft.content.blockentity.HolodeckControllerBlockEntity;
 import com.csquared.trekcraft.content.blockentity.TransporterPadBlockEntity;
 import com.csquared.trekcraft.data.TransporterNetworkSavedData;
 import com.csquared.trekcraft.data.TricorderData;
@@ -113,6 +114,53 @@ public class ModPayloads {
                     if (FMLEnvironment.dist == Dist.CLIENT) {
                         handleOpenContributionScreenOnClient(payload);
                     }
+                }
+        );
+
+        // Holodeck payloads
+        registrar.playToClient(
+                OpenHolodeckScreenPayload.TYPE,
+                OpenHolodeckScreenPayload.STREAM_CODEC,
+                (payload, context) -> {
+                    if (FMLEnvironment.dist == Dist.CLIENT) {
+                        handleOpenHolodeckScreenOnClient(payload);
+                    }
+                }
+        );
+
+        registrar.playToServer(
+                SaveHoloprogramPayload.TYPE,
+                SaveHoloprogramPayload.STREAM_CODEC,
+                (payload, context) -> {
+                    ServerPlayer player = (ServerPlayer) context.player();
+                    handleSaveHoloprogram(player, payload);
+                }
+        );
+
+        registrar.playToServer(
+                LoadHoloprogramPayload.TYPE,
+                LoadHoloprogramPayload.STREAM_CODEC,
+                (payload, context) -> {
+                    ServerPlayer player = (ServerPlayer) context.player();
+                    handleLoadHoloprogram(player, payload);
+                }
+        );
+
+        registrar.playToServer(
+                DeleteHoloprogramPayload.TYPE,
+                DeleteHoloprogramPayload.STREAM_CODEC,
+                (payload, context) -> {
+                    ServerPlayer player = (ServerPlayer) context.player();
+                    handleDeleteHoloprogram(player, payload);
+                }
+        );
+
+        registrar.playToServer(
+                ClearHolodeckPayload.TYPE,
+                ClearHolodeckPayload.STREAM_CODEC,
+                (payload, context) -> {
+                    ServerPlayer player = (ServerPlayer) context.player();
+                    handleClearHolodeck(player, payload);
                 }
         );
     }
@@ -253,6 +301,99 @@ public class ModPayloads {
             handlerClass.getMethod("openContributionScreen", OpenContributionScreenPayload.class).invoke(null, payload);
         } catch (Exception e) {
             TrekCraftMod.LOGGER.error("Failed to open contribution screen", e);
+        }
+    }
+
+    private static void handleOpenHolodeckScreenOnClient(OpenHolodeckScreenPayload payload) {
+        try {
+            Class<?> handlerClass = Class.forName("com.csquared.trekcraft.client.ClientPayloadHandler");
+            handlerClass.getMethod("openHolodeckScreen", OpenHolodeckScreenPayload.class).invoke(null, payload);
+        } catch (Exception e) {
+            TrekCraftMod.LOGGER.error("Failed to open holodeck screen", e);
+        }
+    }
+
+    private static void handleSaveHoloprogram(ServerPlayer player, SaveHoloprogramPayload payload) {
+        ServerLevel level = player.serverLevel();
+
+        // Validate player is within reasonable distance
+        double distSq = player.blockPosition().distSqr(payload.controllerPos());
+        if (distSq > 256) {
+            TrekCraftMod.LOGGER.warn("Player {} tried to save holoprogram too far away", player.getName().getString());
+            return;
+        }
+
+        BlockEntity be = level.getBlockEntity(payload.controllerPos());
+        if (be instanceof HolodeckControllerBlockEntity controller) {
+            boolean success = controller.saveHoloprogram(payload.programName());
+            if (success) {
+                player.displayClientMessage(
+                        Component.literal("Holoprogram saved: " + payload.programName()), true);
+            } else {
+                player.displayClientMessage(
+                        Component.literal("Failed to save holoprogram"), true);
+            }
+        }
+    }
+
+    private static void handleLoadHoloprogram(ServerPlayer player, LoadHoloprogramPayload payload) {
+        ServerLevel level = player.serverLevel();
+
+        double distSq = player.blockPosition().distSqr(payload.controllerPos());
+        if (distSq > 256) {
+            TrekCraftMod.LOGGER.warn("Player {} tried to load holoprogram too far away", player.getName().getString());
+            return;
+        }
+
+        BlockEntity be = level.getBlockEntity(payload.controllerPos());
+        if (be instanceof HolodeckControllerBlockEntity controller) {
+            boolean success = controller.loadHoloprogram(payload.programName());
+            if (success) {
+                player.displayClientMessage(
+                        Component.literal("Holoprogram loaded: " + payload.programName()), true);
+            } else {
+                player.displayClientMessage(
+                        Component.literal("Failed to load holoprogram"), true);
+            }
+        }
+    }
+
+    private static void handleDeleteHoloprogram(ServerPlayer player, DeleteHoloprogramPayload payload) {
+        ServerLevel level = player.serverLevel();
+
+        double distSq = player.blockPosition().distSqr(payload.controllerPos());
+        if (distSq > 256) {
+            TrekCraftMod.LOGGER.warn("Player {} tried to delete holoprogram too far away", player.getName().getString());
+            return;
+        }
+
+        BlockEntity be = level.getBlockEntity(payload.controllerPos());
+        if (be instanceof HolodeckControllerBlockEntity controller) {
+            boolean success = controller.deleteHoloprogram(payload.programName());
+            if (success) {
+                player.displayClientMessage(
+                        Component.literal("Holoprogram deleted: " + payload.programName()), true);
+            } else {
+                player.displayClientMessage(
+                        Component.literal("Failed to delete holoprogram"), true);
+            }
+        }
+    }
+
+    private static void handleClearHolodeck(ServerPlayer player, ClearHolodeckPayload payload) {
+        ServerLevel level = player.serverLevel();
+
+        double distSq = player.blockPosition().distSqr(payload.controllerPos());
+        if (distSq > 256) {
+            TrekCraftMod.LOGGER.warn("Player {} tried to clear holodeck too far away", player.getName().getString());
+            return;
+        }
+
+        BlockEntity be = level.getBlockEntity(payload.controllerPos());
+        if (be instanceof HolodeckControllerBlockEntity controller) {
+            controller.manualClear();
+            player.displayClientMessage(
+                    Component.literal("Holodeck cleared"), true);
         }
     }
 }

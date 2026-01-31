@@ -30,6 +30,10 @@ public class ModCreativeTabs {
                         // Transport blocks
                         output.accept(ModItems.TRANSPORTER_PAD.get());
                         output.accept(ModItems.TRANSPORTER_ROOM.get());
+
+                        // Holodeck blocks
+                        output.accept(ModItems.HOLODECK_EMITTER.get());
+                        output.accept(ModItems.HOLODECK_CONTROLLER.get());
                     })
                     .build()
     );

@@ -1,0 +1,7 @@
+{
+  "replace": false,
+  "values": [
+    "trekcraft:holodeck_emitter",
+    "trekcraft:holodeck_controller"
+  ]
+}
