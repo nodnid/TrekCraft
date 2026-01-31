@@ -4,17 +4,20 @@ import com.csquared.trekcraft.command.TrekCommands;
 import com.csquared.trekcraft.content.item.TricorderItem;
 import com.csquared.trekcraft.data.TransporterNetworkSavedData;
 import com.csquared.trekcraft.data.TricorderData;
+import com.csquared.trekcraft.registry.ModBlocks;
 import com.csquared.trekcraft.registry.ModDataComponents;
 import com.csquared.trekcraft.registry.ModItems;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.EntityLeaveLevelEvent;
+import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 
 import java.util.HashSet;
@@ -144,6 +147,25 @@ public class TrekCraftEvents {
         if (signal.isPresent() && signal.get().type() == TransporterNetworkSavedData.SignalType.DROPPED) {
             networkData.unregisterSignal(tricorderData.tricorderId());
             TrekCraftMod.LOGGER.debug("Unregistered dropped tricorder signal: {}", tricorderData.getDisplayName());
+        }
+    }
+
+    @SubscribeEvent
+    public static void onBlockBreak(BlockEvent.BreakEvent event) {
+        BlockState state = event.getState();
+
+        // Check if it's a protected TrekCraft block
+        boolean isProtectedBlock = state.is(ModBlocks.HOLODECK_EMITTER.get()) ||
+                                   state.is(ModBlocks.HOLODECK_CONTROLLER.get()) ||
+                                   state.is(ModBlocks.TRANSPORTER_PAD.get()) ||
+                                   state.is(ModBlocks.TRANSPORTER_ROOM.get());
+
+        if (isProtectedBlock) {
+            // Only allow breaking with a tricorder
+            ItemStack heldItem = event.getPlayer().getMainHandItem();
+            if (!heldItem.is(ModItems.TRICORDER.get())) {
+                event.setCanceled(true);
+            }
         }
     }
 }

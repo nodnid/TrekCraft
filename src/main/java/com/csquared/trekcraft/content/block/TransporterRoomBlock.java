@@ -3,6 +3,7 @@ package com.csquared.trekcraft.content.block;
 import com.csquared.trekcraft.content.blockentity.TransporterRoomBlockEntity;
 import com.csquared.trekcraft.data.TransporterNetworkSavedData;
 import com.csquared.trekcraft.registry.ModBlockEntities;
+import com.csquared.trekcraft.registry.ModItems;
 import com.mojang.serialization.MapCodec;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
@@ -12,6 +13,7 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.BaseEntityBlock;
 import net.minecraft.world.level.block.RenderShape;
@@ -37,6 +39,15 @@ public class TransporterRoomBlock extends BaseEntityBlock {
     @Override
     public RenderShape getRenderShape(BlockState state) {
         return RenderShape.MODEL;
+    }
+
+    @Override
+    protected float getDestroyProgress(BlockState state, Player player, BlockGetter level, BlockPos pos) {
+        // Only allow breaking with a tricorder - instant break
+        if (player.getMainHandItem().is(ModItems.TRICORDER.get())) {
+            return 1.0f;
+        }
+        return 0.0f;
     }
 
     @Nullable

@@ -3,7 +3,7 @@ package com.csquared.trekcraft.content.block;
 import com.csquared.trekcraft.content.blockentity.TransporterPadBlockEntity;
 import com.csquared.trekcraft.data.TransporterNetworkSavedData;
 import com.csquared.trekcraft.network.OpenNamingScreenPayload;
-import com.csquared.trekcraft.registry.ModBlockEntities;
+import com.csquared.trekcraft.registry.ModItems;
 import com.mojang.serialization.MapCodec;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
@@ -52,6 +52,15 @@ public class TransporterPadBlock extends BaseEntityBlock {
     @Override
     public RenderShape getRenderShape(BlockState state) {
         return RenderShape.MODEL;
+    }
+
+    @Override
+    protected float getDestroyProgress(BlockState state, Player player, BlockGetter level, BlockPos pos) {
+        // Only allow breaking with a tricorder - instant break
+        if (player.getMainHandItem().is(ModItems.TRICORDER.get())) {
+            return 1.0f;
+        }
+        return 0.0f;
     }
 
     @Nullable

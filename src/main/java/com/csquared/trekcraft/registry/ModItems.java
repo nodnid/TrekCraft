@@ -44,6 +44,16 @@ public class ModItems {
             ModBlocks.TRANSPORTER_ROOM
     );
 
+    public static final DeferredItem<BlockItem> HOLODECK_EMITTER = ITEMS.registerSimpleBlockItem(
+            "holodeck_emitter",
+            ModBlocks.HOLODECK_EMITTER
+    );
+
+    public static final DeferredItem<BlockItem> HOLODECK_CONTROLLER = ITEMS.registerSimpleBlockItem(
+            "holodeck_controller",
+            ModBlocks.HOLODECK_CONTROLLER
+    );
+
     public static void register(IEventBus eventBus) {
         ITEMS.register(eventBus);
     }

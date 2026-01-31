@@ -1,7 +1,9 @@
 package com.csquared.trekcraft.client;
 
+import com.csquared.trekcraft.client.screen.HolodeckControllerScreen;
 import com.csquared.trekcraft.client.screen.NamingScreen;
 import com.csquared.trekcraft.client.screen.TricorderScreen;
+import com.csquared.trekcraft.network.OpenHolodeckScreenPayload;
 import com.csquared.trekcraft.network.OpenNamingScreenPayload;
 import com.csquared.trekcraft.network.OpenTricorderScreenPayload;
 import com.csquared.trekcraft.network.ScanResultPayload;
@@ -100,6 +102,14 @@ public class ClientPayloadHandler {
         Minecraft.getInstance().execute(() -> {
             Minecraft.getInstance().setScreen(
                     new com.csquared.trekcraft.client.screen.ContributionScreen(payload)
+            );
+        });
+    }
+
+    public static void openHolodeckScreen(OpenHolodeckScreenPayload payload) {
+        Minecraft.getInstance().execute(() -> {
+            Minecraft.getInstance().setScreen(
+                    new HolodeckControllerScreen(payload)
             );
         });
     }
