@@ -157,6 +157,7 @@ public class TrekCraftEvents {
         // Check if it's a protected TrekCraft block
         boolean isProtectedBlock = state.is(ModBlocks.HOLODECK_EMITTER.get()) ||
                                    state.is(ModBlocks.HOLODECK_CONTROLLER.get()) ||
+                                   state.is(ModBlocks.MOBILE_EMITTER.get()) ||
                                    state.is(ModBlocks.TRANSPORTER_PAD.get()) ||
                                    state.is(ModBlocks.TRANSPORTER_ROOM.get());
 

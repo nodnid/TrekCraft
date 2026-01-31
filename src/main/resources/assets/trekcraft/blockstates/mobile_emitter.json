@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "active=false": {
+      "model": "trekcraft:block/mobile_emitter"
+    },
+    "active=true": {
+      "model": "trekcraft:block/mobile_emitter_active"
+    }
+  }
+}

@@ -3,6 +3,7 @@ package com.csquared.trekcraft.registry;
 import com.csquared.trekcraft.TrekCraftMod;
 import com.csquared.trekcraft.content.block.HolodeckControllerBlock;
 import com.csquared.trekcraft.content.block.HolodeckEmitterBlock;
+import com.csquared.trekcraft.content.block.MobileEmitterBlock;
 import com.csquared.trekcraft.content.block.TransporterPadBlock;
 import com.csquared.trekcraft.content.block.TransporterRoomBlock;
 import com.csquared.trekcraft.content.block.WormholePortalBlock;
@@ -74,6 +75,16 @@ public class ModBlocks {
                     .strength(4.0f, 6.0f)
                     .sound(SoundType.METAL)
                     .noOcclusion()
+            )
+    );
+
+    // Mobile Emitter - forms corners of an open-air holo-area
+    public static final DeferredBlock<MobileEmitterBlock> MOBILE_EMITTER = BLOCKS.register(
+            "mobile_emitter",
+            () -> new MobileEmitterBlock(BlockBehaviour.Properties.of()
+                    .strength(3.0f, 6.0f)
+                    .sound(SoundType.METAL)
+                    .lightLevel(state -> state.getValue(MobileEmitterBlock.ACTIVE) ? 15 : 0)
             )
     );
 

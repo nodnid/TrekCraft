@@ -64,6 +64,19 @@ public class TrekCraftConfig {
             .comment("Creative mode players bypass scan cost")
             .define("creative.bypassScanCost", true);
 
+    // Mobile emitter settings
+    private static final ModConfigSpec.IntValue MOBILE_EMITTER_MAX_X = BUILDER
+            .comment("Maximum X dimension for mobile emitter holo-area")
+            .defineInRange("mobileEmitter.maxX", 256, 16, 1024);
+
+    private static final ModConfigSpec.IntValue MOBILE_EMITTER_MAX_Z = BUILDER
+            .comment("Maximum Z dimension for mobile emitter holo-area")
+            .defineInRange("mobileEmitter.maxZ", 256, 16, 1024);
+
+    private static final ModConfigSpec.IntValue MOBILE_EMITTER_MAX_Y = BUILDER
+            .comment("Maximum Y height for mobile emitter holo-area (from emitter to world height)")
+            .defineInRange("mobileEmitter.maxY", 128, 16, 384);
+
     public static final ModConfigSpec SPEC = BUILDER.build();
 
     // Runtime config values
@@ -80,6 +93,9 @@ public class TrekCraftConfig {
     public static int scanRange;
     public static boolean creativeBypassFuel;
     public static boolean creativeBypassScanCost;
+    public static int mobileEmitterMaxX;
+    public static int mobileEmitterMaxZ;
+    public static int mobileEmitterMaxY;
 
     @SubscribeEvent
     static void onLoad(final ModConfigEvent event) {
@@ -96,5 +112,8 @@ public class TrekCraftConfig {
         scanRange = SCAN_RANGE.get();
         creativeBypassFuel = CREATIVE_BYPASS_FUEL.get();
         creativeBypassScanCost = CREATIVE_BYPASS_SCAN_COST.get();
+        mobileEmitterMaxX = MOBILE_EMITTER_MAX_X.get();
+        mobileEmitterMaxZ = MOBILE_EMITTER_MAX_Z.get();
+        mobileEmitterMaxY = MOBILE_EMITTER_MAX_Y.get();
     }
 }

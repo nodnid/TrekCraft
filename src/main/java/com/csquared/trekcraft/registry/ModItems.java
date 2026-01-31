@@ -55,6 +55,11 @@ public class ModItems {
             () -> new HolodeckArchItem(ModBlocks.HOLODECK_CONTROLLER.get(), new Item.Properties())
     );
 
+    public static final DeferredItem<BlockItem> MOBILE_EMITTER = ITEMS.registerSimpleBlockItem(
+            "mobile_emitter",
+            ModBlocks.MOBILE_EMITTER
+    );
+
     public static void register(IEventBus eventBus) {
         ITEMS.register(eventBus);
     }

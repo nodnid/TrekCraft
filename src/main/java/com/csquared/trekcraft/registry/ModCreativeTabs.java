@@ -34,6 +34,7 @@ public class ModCreativeTabs {
                         // Holodeck blocks
                         output.accept(ModItems.HOLODECK_EMITTER.get());
                         output.accept(ModItems.HOLODECK_CONTROLLER.get());
+                        output.accept(ModItems.MOBILE_EMITTER.get());
                     })
                     .build()
     );

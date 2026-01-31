@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "GRG",
+    "RER",
+    "GRG"
+  ],
+  "key": {
+    "G": {"item": "minecraft:gold_ingot"},
+    "R": {"item": "minecraft:redstone"},
+    "E": {"item": "trekcraft:holodeck_emitter"}
+  },
+  "result": {
+    "id": "trekcraft:mobile_emitter",
+    "count": 4
+  }
+}

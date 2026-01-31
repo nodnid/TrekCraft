@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:block/cube_all",
+  "textures": {
+    "all": "trekcraft:block/mobile_emitter_active"
+  }
+}
