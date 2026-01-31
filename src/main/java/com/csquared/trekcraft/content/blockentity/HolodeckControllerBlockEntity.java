@@ -8,6 +8,7 @@ import com.csquared.trekcraft.registry.ModBlockEntities;
 import com.csquared.trekcraft.registry.ModBlocks;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
+import net.minecraft.core.Vec3i;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
@@ -19,6 +20,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
@@ -203,8 +205,8 @@ public class HolodeckControllerBlockEntity extends BlockEntity {
             return false;
         }
 
-        // Verify emitters form a valid rectangular frame
-        if (!validateRectangularFrame(emitters)) {
+        // Verify emitters form a valid filled room with arch entrance
+        if (!validateFilledRoom(emitters)) {
             deactivate();
             return false;
         }
@@ -269,15 +271,17 @@ public class HolodeckControllerBlockEntity extends BlockEntity {
     }
 
     /**
-     * Validate that emitters form a complete rectangular frame (all 12 edges).
+     * Validate that emitters form a complete filled room with an entrance.
+     * All 6 faces must be filled with emitters, controller, or doors.
+     * At least one door must be present for a valid entrance.
      */
-    private boolean validateRectangularFrame(Set<BlockPos> emitters) {
-        if (emitters.size() < 12) return false; // Minimum for 1x1x1 interior
+    private boolean validateFilledRoom(Set<BlockPos> emitters) {
+        if (emitters.size() < 20) return false; // Minimum for small room
 
-        // Find bounding box
-        int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE;
-        int minY = Integer.MAX_VALUE, maxY = Integer.MIN_VALUE;
-        int minZ = Integer.MAX_VALUE, maxZ = Integer.MIN_VALUE;
+        // Find bounding box of emitters + controller
+        int minX = worldPosition.getX(), maxX = worldPosition.getX();
+        int minY = worldPosition.getY(), maxY = worldPosition.getY();
+        int minZ = worldPosition.getZ(), maxZ = worldPosition.getZ();
 
         for (BlockPos pos : emitters) {
             minX = Math.min(minX, pos.getX());
@@ -288,64 +292,118 @@ public class HolodeckControllerBlockEntity extends BlockEntity {
             maxZ = Math.max(maxZ, pos.getZ());
         }
 
-        // Check that all 12 edges are complete
-        // A rectangular frame has 12 edges (4 along each axis)
+        // Need at least 3x3x3 interior (so 5x5x5 total with walls)
+        if (maxX - minX < 4 || maxY - minY < 4 || maxZ - minZ < 4) {
+            return false;
+        }
 
-        // Bottom face edges (y = minY)
+        boolean hasDoor = false;
+
+        // Check all 6 faces - each position must be emitter, controller, or door
+        // Floor (y = minY)
         for (int x = minX; x <= maxX; x++) {
-            if (!emitters.contains(new BlockPos(x, minY, minZ))) return false;
-            if (!emitters.contains(new BlockPos(x, minY, maxZ))) return false;
-        }
-        for (int z = minZ; z <= maxZ; z++) {
-            if (!emitters.contains(new BlockPos(minX, minY, z))) return false;
-            if (!emitters.contains(new BlockPos(maxX, minY, z))) return false;
+            for (int z = minZ; z <= maxZ; z++) {
+                if (!isValidFaceBlock(emitters, new BlockPos(x, minY, z))) {
+                    return false;
+                }
+                if (isDoorPosition(new BlockPos(x, minY, z))) hasDoor = true;
+            }
         }
 
-        // Top face edges (y = maxY)
+        // Ceiling (y = maxY)
         for (int x = minX; x <= maxX; x++) {
-            if (!emitters.contains(new BlockPos(x, maxY, minZ))) return false;
-            if (!emitters.contains(new BlockPos(x, maxY, maxZ))) return false;
-        }
-        for (int z = minZ; z <= maxZ; z++) {
-            if (!emitters.contains(new BlockPos(minX, maxY, z))) return false;
-            if (!emitters.contains(new BlockPos(maxX, maxY, z))) return false;
+            for (int z = minZ; z <= maxZ; z++) {
+                if (!isValidFaceBlock(emitters, new BlockPos(x, maxY, z))) {
+                    return false;
+                }
+                if (isDoorPosition(new BlockPos(x, maxY, z))) hasDoor = true;
+            }
         }
 
-        // Vertical edges
+        // Four walls (excluding corners already checked by floor/ceiling)
+        // Wall at minX
         for (int y = minY; y <= maxY; y++) {
-            if (!emitters.contains(new BlockPos(minX, y, minZ))) return false;
-            if (!emitters.contains(new BlockPos(maxX, y, minZ))) return false;
-            if (!emitters.contains(new BlockPos(minX, y, maxZ))) return false;
-            if (!emitters.contains(new BlockPos(maxX, y, maxZ))) return false;
+            for (int z = minZ; z <= maxZ; z++) {
+                BlockPos pos = new BlockPos(minX, y, z);
+                if (!isValidFaceBlock(emitters, pos)) {
+                    return false;
+                }
+                if (isDoorPosition(pos)) hasDoor = true;
+            }
         }
 
-        // Verify there are no extra emitters inside (only edges)
-        for (BlockPos pos : emitters) {
-            boolean onEdge =
-                (pos.getX() == minX || pos.getX() == maxX) ||
-                (pos.getY() == minY || pos.getY() == maxY) ||
-                (pos.getZ() == minZ || pos.getZ() == maxZ);
-
-            // Actually, emitters should only be on edges
-            // An edge position has exactly 2 coordinates at min/max values
-            int edgeCount = 0;
-            if (pos.getX() == minX || pos.getX() == maxX) edgeCount++;
-            if (pos.getY() == minY || pos.getY() == maxY) edgeCount++;
-            if (pos.getZ() == minZ || pos.getZ() == maxZ) edgeCount++;
-
-            if (edgeCount < 2) return false; // Not on an edge
+        // Wall at maxX
+        for (int y = minY; y <= maxY; y++) {
+            for (int z = minZ; z <= maxZ; z++) {
+                BlockPos pos = new BlockPos(maxX, y, z);
+                if (!isValidFaceBlock(emitters, pos)) {
+                    return false;
+                }
+                if (isDoorPosition(pos)) hasDoor = true;
+            }
         }
 
-        return true;
+        // Wall at minZ
+        for (int y = minY; y <= maxY; y++) {
+            for (int x = minX; x <= maxX; x++) {
+                BlockPos pos = new BlockPos(x, y, minZ);
+                if (!isValidFaceBlock(emitters, pos)) {
+                    return false;
+                }
+                if (isDoorPosition(pos)) hasDoor = true;
+            }
+        }
+
+        // Wall at maxZ
+        for (int y = minY; y <= maxY; y++) {
+            for (int x = minX; x <= maxX; x++) {
+                BlockPos pos = new BlockPos(x, y, maxZ);
+                if (!isValidFaceBlock(emitters, pos)) {
+                    return false;
+                }
+                if (isDoorPosition(pos)) hasDoor = true;
+            }
+        }
+
+        // Must have at least one door for entrance
+        return hasDoor;
     }
 
     /**
-     * Calculate the interior bounds of the holodeck (1 block inward from frame).
+     * Check if a position is valid for a face block (emitter, controller, or door).
+     */
+    private boolean isValidFaceBlock(Set<BlockPos> emitters, BlockPos pos) {
+        // Valid if it's an emitter
+        if (emitters.contains(pos)) {
+            return true;
+        }
+        // Valid if it's the controller
+        if (pos.equals(worldPosition)) {
+            return true;
+        }
+        // Valid if it's a door
+        if (isDoorPosition(pos)) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Check if a position contains a door block.
+     */
+    private boolean isDoorPosition(BlockPos pos) {
+        if (level == null) return false;
+        BlockState state = level.getBlockState(pos);
+        return state.getBlock() instanceof DoorBlock;
+    }
+
+    /**
+     * Calculate the interior bounds of the holodeck (1 block inward from emitter walls).
      */
     private void calculateInteriorBounds(Set<BlockPos> emitters) {
-        int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE;
-        int minY = Integer.MAX_VALUE, maxY = Integer.MIN_VALUE;
-        int minZ = Integer.MAX_VALUE, maxZ = Integer.MIN_VALUE;
+        int minX = worldPosition.getX(), maxX = worldPosition.getX();
+        int minY = worldPosition.getY(), maxY = worldPosition.getY();
+        int minZ = worldPosition.getZ(), maxZ = worldPosition.getZ();
 
         for (BlockPos pos : emitters) {
             minX = Math.min(minX, pos.getX());
@@ -356,7 +414,7 @@ public class HolodeckControllerBlockEntity extends BlockEntity {
             maxZ = Math.max(maxZ, pos.getZ());
         }
 
-        // Interior is 1 block inward from the frame
+        // Interior is 1 block inward from the emitter walls
         interiorMin = new BlockPos(minX + 1, minY + 1, minZ + 1);
         interiorMax = new BlockPos(maxX - 1, maxY - 1, maxZ - 1);
     }
@@ -394,6 +452,9 @@ public class HolodeckControllerBlockEntity extends BlockEntity {
                     onPlayerExit(player);
                 }
             }
+
+            // Clear interior blocks BEFORE nulling bounds to prevent item exploitation
+            clearInterior(serverLevel);
         }
 
         // Update controller block state (only if the block still exists)
@@ -437,16 +498,24 @@ public class HolodeckControllerBlockEntity extends BlockEntity {
 
     /**
      * Load a holoprogram into the interior.
+     * @return LoadResultDetails with status and size information, or null if holodeck is not active
      */
-    public boolean loadHoloprogram(String name) {
-        if (!active || level == null || level.isClientSide) return false;
-        if (interiorMin == null || interiorMax == null) return false;
+    public HoloprogramManager.LoadResultDetails loadHoloprogram(String name) {
+        if (!active || level == null || level.isClientSide) return null;
+        if (interiorMin == null || interiorMax == null) return null;
+
+        // Calculate interior size
+        Vec3i interiorSize = new Vec3i(
+                interiorMax.getX() - interiorMin.getX() + 1,
+                interiorMax.getY() - interiorMin.getY() + 1,
+                interiorMax.getZ() - interiorMin.getZ() + 1
+        );
 
         // First clear the interior
         clearInterior((ServerLevel) level);
 
-        // Then load the holoprogram
-        return HoloprogramManager.load((ServerLevel) level, name, interiorMin);
+        // Then load the holoprogram with size validation
+        return HoloprogramManager.load((ServerLevel) level, name, interiorMin, interiorSize);
     }
 
     /**
@@ -482,6 +551,10 @@ public class HolodeckControllerBlockEntity extends BlockEntity {
 
     public BlockPos getInteriorMax() {
         return interiorMax;
+    }
+
+    public Set<BlockPos> getFramePositions() {
+        return framePositions;
     }
 
     @Override

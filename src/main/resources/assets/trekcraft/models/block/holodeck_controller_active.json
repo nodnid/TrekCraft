@@ -2,7 +2,7 @@
   "parent": "minecraft:block/cube",
   "textures": {
     "north": "trekcraft:block/transporter_room_top",
-    "south": "trekcraft:block/emiter",
+    "south": "trekcraft:block/transporter_room_top",
     "east": "trekcraft:block/emiter",
     "west": "trekcraft:block/emiter",
     "up": "trekcraft:block/emiter",
