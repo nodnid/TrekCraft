@@ -17,6 +17,8 @@ public class LCARSRenderer {
     public static final int BLUE = 0xFF9999FF;
     public static final int PURPLE = 0xFFCC6699;
     public static final int RED = 0xFFCC4444;
+    public static final int GREEN = 0xFF66CC66;
+    public static final int GRAY = 0xFF666666;
     public static final int BLACK = 0xFF000000;
     public static final int TEXT_DARK = 0xFF000000;
     public static final int TEXT_LIGHT = 0xFFFF9966;

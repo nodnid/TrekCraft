@@ -113,4 +113,66 @@ public class ClientPayloadHandler {
             );
         });
     }
+
+    // ===== Mission System Handlers =====
+
+    public static void openStarfleetCommand(com.csquared.trekcraft.network.mission.OpenStarfleetCommandPayload payload) {
+        Minecraft.getInstance().execute(() -> {
+            // Update TricorderScreen if it's open
+            if (Minecraft.getInstance().screen instanceof TricorderScreen tricorderScreen) {
+                tricorderScreen.updateStarfleetRecord(
+                        payload.rankName(),
+                        payload.totalXp(),
+                        payload.activeMissionCount(),
+                        payload.completedMissionCount()
+                );
+            }
+        });
+    }
+
+    public static void openMissionBoard(com.csquared.trekcraft.network.mission.OpenMissionBoardPayload payload) {
+        Minecraft.getInstance().execute(() -> {
+            // Update TricorderScreen if it's open
+            if (Minecraft.getInstance().screen instanceof TricorderScreen tricorderScreen) {
+                tricorderScreen.updateMissionBoard(payload.missions());
+            }
+        });
+    }
+
+    public static void openMissionLog(com.csquared.trekcraft.network.mission.OpenMissionLogPayload payload) {
+        Minecraft.getInstance().execute(() -> {
+            // Update TricorderScreen if it's open
+            if (Minecraft.getInstance().screen instanceof TricorderScreen tricorderScreen) {
+                tricorderScreen.updateMissionLog(payload.activeMissions());
+            }
+        });
+    }
+
+    public static void handleMissionProgressUpdate(com.csquared.trekcraft.network.mission.MissionProgressUpdatePayload payload) {
+        // Update any open mission screens
+        Minecraft.getInstance().execute(() -> {
+            if (Minecraft.getInstance().screen instanceof TricorderScreen tricorderScreen) {
+                // Request updated mission data
+                // The screen will be refreshed when the payload arrives
+            }
+        });
+    }
+
+    public static void openServiceRecord(com.csquared.trekcraft.network.mission.OpenServiceRecordPayload payload) {
+        Minecraft.getInstance().execute(() -> {
+            // Update TricorderScreen if it's open
+            if (Minecraft.getInstance().screen instanceof TricorderScreen tricorderScreen) {
+                tricorderScreen.updateServiceRecord(payload);
+            }
+        });
+    }
+
+    public static void openMissionInfo(com.csquared.trekcraft.network.mission.OpenMissionInfoPayload payload) {
+        Minecraft.getInstance().execute(() -> {
+            // Update TricorderScreen if it's open
+            if (Minecraft.getInstance().screen instanceof TricorderScreen tricorderScreen) {
+                tricorderScreen.updateMissionInfo(payload);
+            }
+        });
+    }
 }

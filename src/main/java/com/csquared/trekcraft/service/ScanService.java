@@ -3,6 +3,7 @@ package com.csquared.trekcraft.service;
 import com.csquared.trekcraft.TrekCraftMod;
 import com.csquared.trekcraft.network.ScanResultPayload;
 import com.csquared.trekcraft.registry.ModItems;
+import com.csquared.trekcraft.service.MissionService;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -132,15 +133,36 @@ public class ScanService {
         );
         List<Entity> entities = level.getEntities(player, scanBox, e -> e instanceof LivingEntity && !(e instanceof Player));
 
+        // Track unique entity types for mission progress (avoid double-counting same type)
+        Set<ResourceLocation> scannedEntityTypes = new HashSet<>();
+
         for (Entity entity : entities) {
             // Calculate relative position within scan area
             float relX = (float) (entity.getX() - minPos.getX());
             float relY = (float) (entity.getY() - minPos.getY());
             float relZ = (float) (entity.getZ() - minPos.getZ());
-            String entityType = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString();
+            ResourceLocation entityTypeLoc = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
+            String entityType = entityTypeLoc.toString();
             float yaw = entity.getYRot();
 
             scannedEntities.add(new ScanResultPayload.ScannedEntity(relX, relY, relZ, entityType, yaw));
+
+            // Track for mission progress
+            scannedEntityTypes.add(entityTypeLoc);
+        }
+
+        // Update scan mission progress for each unique entity type scanned
+        for (ResourceLocation entityType : scannedEntityTypes) {
+            MissionService.updateScanProgress(player, entityType, null);
+        }
+
+        // Also update for unique block types scanned
+        Set<ResourceLocation> scannedBlockTypes = new HashSet<>();
+        for (ScanResultPayload.ScannedBlock block : interestingBlocks) {
+            scannedBlockTypes.add(ResourceLocation.parse(block.blockId()));
+        }
+        for (ResourceLocation blockType : scannedBlockTypes) {
+            MissionService.updateScanProgress(player, null, blockType);
         }
 
         // Send scan results to client

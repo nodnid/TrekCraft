@@ -99,6 +99,34 @@ In `TrekCraftEvents.java`:
 2. Handler returns `int` (1 = success, 0 = failure)
 3. Use `ChatUi` for Trek-style message formatting
 
+## Tricorder GUI Layout
+
+The Tricorder uses an LCARS-style GUI in `TricorderScreen.java`:
+
+**Panel Dimensions:**
+- `PANEL_WIDTH = 250`, `PANEL_HEIGHT = 220`
+- `BUTTON_WIDTH = 170`, `BUTTON_HEIGHT = 22`, `BUTTON_SPACING = 6`
+- `BUTTON_Y_OFFSET = -16` (offset from contentY)
+
+**Content Area:**
+- The content area fits exactly **6 buttons** vertically (MAX_VISIBLE_BUTTONS = 6)
+- Total vertical space: 6 × (22 + 6) = **168 pixels**
+- Button positions: `buttonY = contentY + BUTTON_Y_OFFSET + (slot * (BUTTON_HEIGHT + BUTTON_SPACING))`
+- Slots 0-5 are available; use slot 5 for action buttons on info screens
+
+**Background:**
+- Content area has a black background - use LCARS colors for text visibility
+- Avoid `TEXT_DARK` (black) for text; use `ORANGE`, `PEACH`, `LAVENDER`, `BLUE`, `GREEN`, etc.
+
+**Colors (from LCARSRenderer):**
+- `ORANGE = 0xFFFF9966` - titles, highlights
+- `PEACH = 0xFFFFCC99` - labels, available items
+- `LAVENDER = 0xFFCC99CC` - body text, secondary info
+- `BLUE = 0xFF9999FF` - rank info, emphasis
+- `GREEN = 0xFF66CC66` - active status, XP, progress
+- `RED = 0xFFCC4444` - warnings, abandon actions
+- `GRAY = 0xFF666666` - locked/unavailable items
+
 ## Code Patterns
 
 - Use records for immutable data (`TricorderData`, `PadRecord`, etc.)

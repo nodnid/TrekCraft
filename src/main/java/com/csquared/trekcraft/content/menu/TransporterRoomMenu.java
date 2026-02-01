@@ -4,6 +4,7 @@ import com.csquared.trekcraft.content.blockentity.TransporterRoomBlockEntity;
 import com.csquared.trekcraft.data.TransporterNetworkSavedData;
 import com.csquared.trekcraft.registry.ModItems;
 import com.csquared.trekcraft.registry.ModMenuTypes;
+import com.csquared.trekcraft.service.MissionService;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerLevel;
@@ -101,6 +102,9 @@ public class TransporterRoomMenu extends AbstractContainerMenu {
             // Deposit - player added latinum
             data.recordDeposit(playerId, playerName, delta);
             data.checkAndAwardRankUp(playerId, serverPlayer);
+
+            // Update contribution missions
+            MissionService.updateContributionProgressForItem(serverPlayer, ModItems.LATINUM_STRIP.get(), delta);
         } else if (delta < 0) {
             // Withdrawal - player removed latinum
             data.recordWithdrawal(playerId, playerName, Math.abs(delta));

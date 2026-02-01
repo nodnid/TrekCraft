@@ -3,16 +3,26 @@ package com.csquared.trekcraft.command;
 import com.csquared.trekcraft.TrekCraftConfig;
 import com.csquared.trekcraft.content.item.TricorderItem;
 import com.csquared.trekcraft.data.ContributorRank;
+import com.csquared.trekcraft.data.StarfleetSavedData;
 import com.csquared.trekcraft.data.TransporterNetworkSavedData;
 import com.csquared.trekcraft.data.TransporterNetworkSavedData.ContributorRecord;
 import com.csquared.trekcraft.data.TransporterNetworkSavedData.RoomRecord;
 import com.csquared.trekcraft.data.TransporterNetworkSavedData.SignalType;
 import com.csquared.trekcraft.data.TricorderData;
+import com.csquared.trekcraft.mission.Mission;
+import com.csquared.trekcraft.mission.objectives.DefendObjective;
 import com.csquared.trekcraft.network.OpenContributionScreenPayload;
+import com.csquared.trekcraft.network.mission.OpenMissionBoardPayload;
+import com.csquared.trekcraft.network.mission.OpenMissionInfoPayload;
+import com.csquared.trekcraft.network.mission.OpenMissionLogPayload;
+import com.csquared.trekcraft.network.mission.OpenServiceRecordPayload;
 import com.csquared.trekcraft.registry.ModDataComponents;
 import com.csquared.trekcraft.registry.ModItems;
+import com.csquared.trekcraft.service.MissionService;
 import com.csquared.trekcraft.service.ScanService;
+import com.csquared.trekcraft.service.StarfleetService;
 import com.csquared.trekcraft.service.TransportService;
+import com.csquared.trekcraft.starfleet.StarfleetRank;
 import com.csquared.trekcraft.util.ChatUi;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
@@ -21,6 +31,7 @@ import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.commands.arguments.UuidArgument;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
@@ -85,6 +96,56 @@ public class TrekCommands {
                                         .executes(TrekCommands::openContributionScreen))
                                 .then(Commands.literal("leaderboard")
                                         .executes(TrekCommands::openContributionScreen)))
+
+                        // Starfleet commands
+                        .then(Commands.literal("starfleet")
+                                .then(Commands.literal("rank")
+                                        .executes(TrekCommands::starfleetRank)
+                                        .then(Commands.argument("player", EntityArgument.player())
+                                                .executes(TrekCommands::starfleetRankOther)))
+                                .then(Commands.literal("setxp")
+                                        .requires(source -> source.hasPermission(2))
+                                        .then(Commands.argument("player", EntityArgument.player())
+                                                .then(Commands.argument("amount", IntegerArgumentType.integer(0))
+                                                        .executes(TrekCommands::starfleetSetXp))))
+                                .then(Commands.literal("addxp")
+                                        .requires(source -> source.hasPermission(2))
+                                        .then(Commands.argument("player", EntityArgument.player())
+                                                .then(Commands.argument("amount", IntegerArgumentType.integer(1))
+                                                        .executes(TrekCommands::starfleetAddXp)))))
+
+                        // Mission commands
+                        .then(Commands.literal("mission")
+                                .then(Commands.literal("list")
+                                        .executes(TrekCommands::missionList))
+                                .then(Commands.literal("info")
+                                        .then(Commands.argument("uuid", UuidArgument.uuid())
+                                                .executes(TrekCommands::missionInfo)))
+                                .then(Commands.literal("accept")
+                                        .then(Commands.argument("uuid", UuidArgument.uuid())
+                                                .executes(TrekCommands::missionAccept)))
+                                .then(Commands.literal("abandon")
+                                        .then(Commands.argument("uuid", UuidArgument.uuid())
+                                                .executes(TrekCommands::missionAbandon)))
+                                .then(Commands.literal("delete")
+                                        .requires(source -> source.hasPermission(2))
+                                        .then(Commands.argument("uuid", UuidArgument.uuid())
+                                                .executes(TrekCommands::missionDelete)))
+                                .then(Commands.literal("log")
+                                        .executes(TrekCommands::missionLog)))
+
+                        // Admin commands
+                        .then(Commands.literal("admin")
+                                .requires(source -> source.hasPermission(2))
+                                .then(Commands.literal("admiral")
+                                        .then(Commands.literal("grant")
+                                                .then(Commands.argument("player", EntityArgument.player())
+                                                        .executes(TrekCommands::admiralGrant)))
+                                        .then(Commands.literal("revoke")
+                                                .then(Commands.argument("player", EntityArgument.player())
+                                                        .executes(TrekCommands::admiralRevoke)))
+                                        .then(Commands.literal("list")
+                                                .executes(TrekCommands::admiralList))))
         );
     }
 
@@ -440,6 +501,373 @@ public class TrekCommands {
         );
 
         PacketDistributor.sendToPlayer(player, payload);
+        return 1;
+    }
+
+    // ===== Starfleet Commands =====
+
+    private static int starfleetRank(CommandContext<CommandSourceStack> ctx) {
+        ServerPlayer player = ctx.getSource().getPlayer();
+        if (player == null) return 0;
+
+        ServerLevel level = player.serverLevel();
+        StarfleetSavedData data = StarfleetSavedData.get(level);
+
+        StarfleetRank rank = StarfleetService.getPlayerRank(player);
+        long totalXp = StarfleetService.getPlayerXp(player);
+        long xpToNextRank = StarfleetRank.getXpToNextRank(totalXp);
+
+        // Get mission counts
+        int activeMissionCount = data.getPlayerActiveMissions(player.getUUID()).size();
+        int completedMissionCount = data.getPlayer(player.getUUID())
+                .map(rec -> rec.completedMissions().size())
+                .orElse(0);
+
+        // Stats tracking - placeholders for now (can be expanded later)
+        int totalKills = 0;
+        int totalScans = 0;
+        int biomesExplored = 0;
+
+        OpenServiceRecordPayload payload = new OpenServiceRecordPayload(
+                rank.getTitle(),
+                totalXp,
+                xpToNextRank,
+                activeMissionCount,
+                completedMissionCount,
+                totalKills,
+                totalScans,
+                biomesExplored
+        );
+
+        PacketDistributor.sendToPlayer(player, payload);
+        return 1;
+    }
+
+    private static int starfleetRankOther(CommandContext<CommandSourceStack> ctx) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer requestor = ctx.getSource().getPlayer();
+        ServerPlayer target = EntityArgument.getPlayer(ctx, "player");
+
+        if (requestor == null) return 0;
+
+        StarfleetRank rank = StarfleetService.getPlayerRank(target);
+        long xp = StarfleetService.getPlayerXp(target);
+
+        requestor.sendSystemMessage(Component.literal("=== STARFLEET RECORD: ")
+                .withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD)
+                .append(Component.literal(target.getName().getString())
+                        .withStyle(ChatFormatting.AQUA))
+                .append(Component.literal(" ===")
+                        .withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD)));
+
+        requestor.sendSystemMessage(Component.literal("Rank: ")
+                .withStyle(ChatFormatting.GRAY)
+                .append(Component.literal(rank.getTitle())
+                        .withStyle(ChatFormatting.AQUA, ChatFormatting.BOLD))
+                .append(Component.literal(" (" + xp + " XP)")
+                        .withStyle(ChatFormatting.GRAY)));
+
+        return 1;
+    }
+
+    private static int starfleetSetXp(CommandContext<CommandSourceStack> ctx) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer admin = ctx.getSource().getPlayer();
+        ServerPlayer target = EntityArgument.getPlayer(ctx, "player");
+        int amount = IntegerArgumentType.getInteger(ctx, "amount");
+
+        ServerLevel level = target.serverLevel();
+        StarfleetService.setXp(level, target.getUUID(), target.getName().getString(), amount);
+
+        if (admin != null) {
+            admin.sendSystemMessage(Component.literal("Set ")
+                    .withStyle(ChatFormatting.YELLOW)
+                    .append(Component.literal(target.getName().getString())
+                            .withStyle(ChatFormatting.AQUA))
+                    .append(Component.literal("'s XP to " + amount)
+                            .withStyle(ChatFormatting.YELLOW)));
+        }
+
+        target.sendSystemMessage(Component.literal("Your Starfleet XP has been set to " + amount)
+                .withStyle(ChatFormatting.YELLOW));
+
+        return 1;
+    }
+
+    private static int starfleetAddXp(CommandContext<CommandSourceStack> ctx) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer admin = ctx.getSource().getPlayer();
+        ServerPlayer target = EntityArgument.getPlayer(ctx, "player");
+        int amount = IntegerArgumentType.getInteger(ctx, "amount");
+
+        StarfleetService.awardXp(target, amount);
+
+        if (admin != null) {
+            admin.sendSystemMessage(Component.literal("Added ")
+                    .withStyle(ChatFormatting.GREEN)
+                    .append(Component.literal(amount + " XP")
+                            .withStyle(ChatFormatting.AQUA))
+                    .append(Component.literal(" to ")
+                            .withStyle(ChatFormatting.GREEN))
+                    .append(Component.literal(target.getName().getString())
+                            .withStyle(ChatFormatting.AQUA)));
+        }
+
+        return 1;
+    }
+
+    // ===== Mission Commands =====
+
+    private static int missionList(CommandContext<CommandSourceStack> ctx) {
+        ServerPlayer player = ctx.getSource().getPlayer();
+        if (player == null) return 0;
+
+        ServerLevel level = player.serverLevel();
+        List<Mission> missions = MissionService.getMissionBoard(level);
+        StarfleetRank playerRank = StarfleetService.getPlayerRank(player);
+
+        // Build payload for GUI
+        List<OpenMissionBoardPayload.MissionSummary> summaries = new ArrayList<>();
+        for (Mission mission : missions) {
+            boolean canAccept = mission.canAccept(playerRank);
+            boolean isParticipant = mission.hasParticipant(player.getUUID());
+
+            summaries.add(new OpenMissionBoardPayload.MissionSummary(
+                    mission.missionId(),
+                    mission.title(),
+                    mission.objective().getDescription(),
+                    mission.xpReward(),
+                    mission.minRank().getTitle(),
+                    mission.getStatusString(),
+                    mission.progress().getProgressPercent(),
+                    mission.participants().size(),
+                    isParticipant,
+                    canAccept
+            ));
+        }
+
+        // Send payload to update GUI
+        PacketDistributor.sendToPlayer(player, new OpenMissionBoardPayload(summaries, playerRank.getTitle()));
+
+        return 1;
+    }
+
+    private static int missionInfo(CommandContext<CommandSourceStack> ctx) {
+        ServerPlayer player = ctx.getSource().getPlayer();
+        if (player == null) return 0;
+
+        UUID missionId = UuidArgument.getUuid(ctx, "uuid");
+        ServerLevel level = player.serverLevel();
+
+        var missionOpt = MissionService.getMission(level, missionId);
+        if (missionOpt.isEmpty()) {
+            player.sendSystemMessage(Component.literal("Mission not found.")
+                    .withStyle(ChatFormatting.RED));
+            return 0;
+        }
+
+        Mission mission = missionOpt.get();
+        StarfleetRank playerRank = StarfleetService.getPlayerRank(player);
+        boolean isParticipant = mission.hasParticipant(player.getUUID());
+        boolean canAccept = mission.canAccept(playerRank);
+
+        // Generate progress text
+        String progressText = generateProgressText(mission);
+
+        // Build and send payload for GUI
+        OpenMissionInfoPayload payload = new OpenMissionInfoPayload(
+                mission.missionId(),
+                mission.title(),
+                mission.description(),
+                mission.objective().getDescription(),
+                mission.xpReward(),
+                mission.minRank().getTitle(),
+                mission.getStatusString(),
+                mission.progress().getProgressPercent(),
+                mission.progress().totalProgress(),
+                mission.progress().targetProgress(),
+                progressText,
+                mission.participants().size(),
+                isParticipant,
+                canAccept
+        );
+
+        PacketDistributor.sendToPlayer(player, payload);
+
+        return 1;
+    }
+
+    private static int missionAccept(CommandContext<CommandSourceStack> ctx) {
+        ServerPlayer player = ctx.getSource().getPlayer();
+        if (player == null) return 0;
+
+        UUID missionId = UuidArgument.getUuid(ctx, "uuid");
+        MissionService.MissionResult result = MissionService.acceptMission(player, missionId);
+
+        if (result != MissionService.MissionResult.SUCCESS) {
+            player.sendSystemMessage(Component.literal(MissionService.getResultMessage(result))
+                    .withStyle(ChatFormatting.RED));
+            return 0;
+        }
+
+        return 1;
+    }
+
+    private static int missionAbandon(CommandContext<CommandSourceStack> ctx) {
+        ServerPlayer player = ctx.getSource().getPlayer();
+        if (player == null) return 0;
+
+        UUID missionId = UuidArgument.getUuid(ctx, "uuid");
+        MissionService.MissionResult result = MissionService.abandonMission(player, missionId);
+
+        if (result != MissionService.MissionResult.SUCCESS) {
+            player.sendSystemMessage(Component.literal(MissionService.getResultMessage(result))
+                    .withStyle(ChatFormatting.RED));
+            return 0;
+        }
+
+        return 1;
+    }
+
+    private static int missionDelete(CommandContext<CommandSourceStack> ctx) {
+        ServerPlayer player = ctx.getSource().getPlayer();
+        if (player == null) return 0;
+
+        UUID missionId = UuidArgument.getUuid(ctx, "uuid");
+        MissionService.MissionResult result = MissionService.deleteMission(player, missionId);
+
+        if (result != MissionService.MissionResult.SUCCESS) {
+            player.sendSystemMessage(Component.literal(MissionService.getResultMessage(result))
+                    .withStyle(ChatFormatting.RED));
+            return 0;
+        }
+
+        return 1;
+    }
+
+    private static int missionLog(CommandContext<CommandSourceStack> ctx) {
+        ServerPlayer player = ctx.getSource().getPlayer();
+        if (player == null) return 0;
+
+        List<Mission> missions = MissionService.getPlayerMissionLog(player);
+
+        // Build payload for GUI
+        List<OpenMissionLogPayload.ActiveMissionEntry> entries = new ArrayList<>();
+        for (Mission mission : missions) {
+            int contribution = mission.progress().getPlayerContribution(player.getUUID());
+
+            // Generate progress text based on objective type
+            String progressText = generateProgressText(mission);
+
+            entries.add(new OpenMissionLogPayload.ActiveMissionEntry(
+                    mission.missionId(),
+                    mission.title(),
+                    mission.objective().getDescription(),
+                    mission.xpReward(),
+                    mission.progress().getProgressPercent(),
+                    mission.progress().totalProgress(),
+                    mission.progress().targetProgress(),
+                    contribution,
+                    progressText
+            ));
+        }
+
+        // Send payload to update GUI
+        PacketDistributor.sendToPlayer(player, new OpenMissionLogPayload(entries));
+
+        return 1;
+    }
+
+    /**
+     * Generate human-readable progress text based on mission objective type.
+     */
+    private static String generateProgressText(Mission mission) {
+        var progress = mission.progress();
+        var objective = mission.objective();
+
+        return switch (objective.getType()) {
+            case KILL -> progress.totalProgress() + "/" + progress.targetProgress();
+            case SCAN -> progress.totalProgress() + "/" + progress.targetProgress();
+            case GATHER -> progress.totalProgress() + "/" + progress.targetProgress();
+            case EXPLORE -> progress.totalProgress() + "/" + progress.targetProgress();
+            case CONTRIBUTION -> progress.totalProgress() + "/" + progress.targetProgress();
+            case DEFEND -> {
+                // For defend missions, show elapsed/total seconds
+                if (objective instanceof DefendObjective defendObj) {
+                    long totalTicks = defendObj.durationTicks();
+                    long remaining = progress.defendTicksRemaining();
+                    int totalSeconds = (int)(totalTicks / 20);
+                    int secondsElapsed = totalSeconds - (int)(remaining / 20);
+                    yield secondsElapsed + "/" + totalSeconds + "s";
+                }
+                yield progress.totalProgress() + "/" + progress.targetProgress();
+            }
+            case BUILD -> progress.totalProgress() + "/" + progress.targetProgress();
+            case COMPOSITE -> progress.totalProgress() + "/" + progress.targetProgress();
+        };
+    }
+
+    // ===== Admin Commands =====
+
+    private static int admiralGrant(CommandContext<CommandSourceStack> ctx) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer admin = ctx.getSource().getPlayer();
+        ServerPlayer target = EntityArgument.getPlayer(ctx, "player");
+
+        ServerLevel level = target.serverLevel();
+        StarfleetService.grantAdmiral(level, target.getUUID());
+
+        if (admin != null) {
+            admin.sendSystemMessage(Component.literal("Granted Admiral status to ")
+                    .withStyle(ChatFormatting.GREEN)
+                    .append(Component.literal(target.getName().getString())
+                            .withStyle(ChatFormatting.AQUA)));
+        }
+
+        return 1;
+    }
+
+    private static int admiralRevoke(CommandContext<CommandSourceStack> ctx) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer admin = ctx.getSource().getPlayer();
+        ServerPlayer target = EntityArgument.getPlayer(ctx, "player");
+
+        ServerLevel level = target.serverLevel();
+        StarfleetService.revokeAdmiral(level, target.getUUID());
+
+        if (admin != null) {
+            admin.sendSystemMessage(Component.literal("Revoked Admiral status from ")
+                    .withStyle(ChatFormatting.YELLOW)
+                    .append(Component.literal(target.getName().getString())
+                            .withStyle(ChatFormatting.AQUA)));
+        }
+
+        return 1;
+    }
+
+    private static int admiralList(CommandContext<CommandSourceStack> ctx) {
+        ServerPlayer player = ctx.getSource().getPlayer();
+        if (player == null) return 0;
+
+        ServerLevel level = player.serverLevel();
+        var admirals = StarfleetService.getManualAdmirals(level);
+
+        player.sendSystemMessage(Component.literal("=== ADMIRALS ===").withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));
+
+        if (admirals.isEmpty()) {
+            player.sendSystemMessage(Component.literal("No manually assigned admirals.")
+                    .withStyle(ChatFormatting.GRAY));
+            player.sendSystemMessage(Component.literal("Note: Server operators automatically have Admiral status.")
+                    .withStyle(ChatFormatting.DARK_GRAY));
+            return 1;
+        }
+
+        for (UUID admiralId : admirals) {
+            // Try to get player name
+            ServerPlayer admiralPlayer = level.getServer().getPlayerList().getPlayer(admiralId);
+            String name = admiralPlayer != null ? admiralPlayer.getName().getString() : admiralId.toString().substring(0, 8) + "...";
+
+            player.sendSystemMessage(Component.literal("• ")
+                    .withStyle(ChatFormatting.GRAY)
+                    .append(Component.literal(name)
+                            .withStyle(ChatFormatting.AQUA)));
+        }
+
         return 1;
     }
 }

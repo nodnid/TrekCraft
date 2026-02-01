@@ -6,8 +6,10 @@ import com.csquared.trekcraft.content.blockentity.TransporterPadBlockEntity;
 import com.csquared.trekcraft.holodeck.HoloprogramManager;
 import com.csquared.trekcraft.data.TransporterNetworkSavedData;
 import com.csquared.trekcraft.data.TricorderData;
+import com.csquared.trekcraft.network.mission.*;
 import com.csquared.trekcraft.registry.ModDataComponents;
 import com.csquared.trekcraft.registry.ModItems;
+import com.csquared.trekcraft.service.MissionService;
 import com.csquared.trekcraft.service.WormholeService;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
@@ -174,6 +176,85 @@ public class ModPayloads {
                     if (FMLEnvironment.dist == Dist.CLIENT) {
                         handleSyncHoloprogramOnClient(payload);
                     }
+                }
+        );
+
+        // Mission system payloads
+        registrar.playToClient(
+                OpenStarfleetCommandPayload.TYPE,
+                OpenStarfleetCommandPayload.STREAM_CODEC,
+                (payload, context) -> {
+                    if (FMLEnvironment.dist == Dist.CLIENT) {
+                        handleOpenStarfleetCommandOnClient(payload);
+                    }
+                }
+        );
+
+        registrar.playToClient(
+                OpenMissionBoardPayload.TYPE,
+                OpenMissionBoardPayload.STREAM_CODEC,
+                (payload, context) -> {
+                    if (FMLEnvironment.dist == Dist.CLIENT) {
+                        handleOpenMissionBoardOnClient(payload);
+                    }
+                }
+        );
+
+        registrar.playToClient(
+                OpenMissionLogPayload.TYPE,
+                OpenMissionLogPayload.STREAM_CODEC,
+                (payload, context) -> {
+                    if (FMLEnvironment.dist == Dist.CLIENT) {
+                        handleOpenMissionLogOnClient(payload);
+                    }
+                }
+        );
+
+        registrar.playToClient(
+                MissionProgressUpdatePayload.TYPE,
+                MissionProgressUpdatePayload.STREAM_CODEC,
+                (payload, context) -> {
+                    if (FMLEnvironment.dist == Dist.CLIENT) {
+                        handleMissionProgressUpdateOnClient(payload);
+                    }
+                }
+        );
+
+        registrar.playToClient(
+                OpenServiceRecordPayload.TYPE,
+                OpenServiceRecordPayload.STREAM_CODEC,
+                (payload, context) -> {
+                    if (FMLEnvironment.dist == Dist.CLIENT) {
+                        handleOpenServiceRecordOnClient(payload);
+                    }
+                }
+        );
+
+        registrar.playToClient(
+                OpenMissionInfoPayload.TYPE,
+                OpenMissionInfoPayload.STREAM_CODEC,
+                (payload, context) -> {
+                    if (FMLEnvironment.dist == Dist.CLIENT) {
+                        handleOpenMissionInfoOnClient(payload);
+                    }
+                }
+        );
+
+        registrar.playToServer(
+                AcceptMissionPayload.TYPE,
+                AcceptMissionPayload.STREAM_CODEC,
+                (payload, context) -> {
+                    ServerPlayer player = (ServerPlayer) context.player();
+                    handleAcceptMission(player, payload);
+                }
+        );
+
+        registrar.playToServer(
+                AbandonMissionPayload.TYPE,
+                AbandonMissionPayload.STREAM_CODEC,
+                (payload, context) -> {
+                    ServerPlayer player = (ServerPlayer) context.player();
+                    handleAbandonMission(player, payload);
                 }
         );
     }
@@ -431,6 +512,78 @@ public class ModPayloads {
             controller.manualClear();
             player.displayClientMessage(
                     Component.literal("Holodeck cleared"), true);
+        }
+    }
+
+    // ===== Mission System Handlers =====
+
+    private static void handleOpenStarfleetCommandOnClient(OpenStarfleetCommandPayload payload) {
+        try {
+            Class<?> handlerClass = Class.forName("com.csquared.trekcraft.client.ClientPayloadHandler");
+            handlerClass.getMethod("openStarfleetCommand", OpenStarfleetCommandPayload.class).invoke(null, payload);
+        } catch (Exception e) {
+            TrekCraftMod.LOGGER.error("Failed to open Starfleet Command screen", e);
+        }
+    }
+
+    private static void handleOpenMissionBoardOnClient(OpenMissionBoardPayload payload) {
+        try {
+            Class<?> handlerClass = Class.forName("com.csquared.trekcraft.client.ClientPayloadHandler");
+            handlerClass.getMethod("openMissionBoard", OpenMissionBoardPayload.class).invoke(null, payload);
+        } catch (Exception e) {
+            TrekCraftMod.LOGGER.error("Failed to open Mission Board screen", e);
+        }
+    }
+
+    private static void handleOpenMissionLogOnClient(OpenMissionLogPayload payload) {
+        try {
+            Class<?> handlerClass = Class.forName("com.csquared.trekcraft.client.ClientPayloadHandler");
+            handlerClass.getMethod("openMissionLog", OpenMissionLogPayload.class).invoke(null, payload);
+        } catch (Exception e) {
+            TrekCraftMod.LOGGER.error("Failed to open Mission Log screen", e);
+        }
+    }
+
+    private static void handleMissionProgressUpdateOnClient(MissionProgressUpdatePayload payload) {
+        try {
+            Class<?> handlerClass = Class.forName("com.csquared.trekcraft.client.ClientPayloadHandler");
+            handlerClass.getMethod("handleMissionProgressUpdate", MissionProgressUpdatePayload.class).invoke(null, payload);
+        } catch (Exception e) {
+            TrekCraftMod.LOGGER.error("Failed to handle mission progress update", e);
+        }
+    }
+
+    private static void handleOpenServiceRecordOnClient(OpenServiceRecordPayload payload) {
+        try {
+            Class<?> handlerClass = Class.forName("com.csquared.trekcraft.client.ClientPayloadHandler");
+            handlerClass.getMethod("openServiceRecord", OpenServiceRecordPayload.class).invoke(null, payload);
+        } catch (Exception e) {
+            TrekCraftMod.LOGGER.error("Failed to open Service Record screen", e);
+        }
+    }
+
+    private static void handleOpenMissionInfoOnClient(OpenMissionInfoPayload payload) {
+        try {
+            Class<?> handlerClass = Class.forName("com.csquared.trekcraft.client.ClientPayloadHandler");
+            handlerClass.getMethod("openMissionInfo", OpenMissionInfoPayload.class).invoke(null, payload);
+        } catch (Exception e) {
+            TrekCraftMod.LOGGER.error("Failed to open Mission Info screen", e);
+        }
+    }
+
+    private static void handleAcceptMission(ServerPlayer player, AcceptMissionPayload payload) {
+        MissionService.MissionResult result = MissionService.acceptMission(player, payload.missionId());
+        if (result != MissionService.MissionResult.SUCCESS) {
+            player.displayClientMessage(
+                    Component.literal(MissionService.getResultMessage(result)), true);
+        }
+    }
+
+    private static void handleAbandonMission(ServerPlayer player, AbandonMissionPayload payload) {
+        MissionService.MissionResult result = MissionService.abandonMission(player, payload.missionId());
+        if (result != MissionService.MissionResult.SUCCESS) {
+            player.displayClientMessage(
+                    Component.literal(MissionService.getResultMessage(result)), true);
         }
     }
 }

@@ -5,6 +5,10 @@ import com.csquared.trekcraft.data.TransporterNetworkSavedData.SignalType;
 import com.csquared.trekcraft.data.TricorderData;
 import com.csquared.trekcraft.network.OpenTricorderScreenPayload;
 import com.csquared.trekcraft.network.ScanResultPayload;
+import com.csquared.trekcraft.network.mission.OpenMissionBoardPayload;
+import com.csquared.trekcraft.network.mission.OpenMissionInfoPayload;
+import com.csquared.trekcraft.network.mission.OpenMissionLogPayload;
+import com.csquared.trekcraft.network.mission.OpenServiceRecordPayload;
 import com.csquared.trekcraft.registry.ModDataComponents;
 import com.csquared.trekcraft.registry.ModItems;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -78,12 +82,35 @@ public class TricorderScreen extends Screen {
     private int mainMenuScrollOffset = 0;
     private int padScrollOffset = 0;
     private int signalScrollOffset = 0;
+    private int missionBoardScrollOffset = 0;
+    private int missionLogScrollOffset = 0;
+
+    // Mission data (populated by payloads)
+    private String playerRankTitle = "Crewman";
+    private long playerXp = 0;
+    private long xpToNextRank = 100;
+    private int activeMissionCount = 0;
+    private int completedMissionCount = 0;
+    private int totalKills = 0;
+    private int totalScans = 0;
+    private int biomesExplored = 0;
+    private List<OpenMissionBoardPayload.MissionSummary> missionBoardData = new ArrayList<>();
+    private List<OpenMissionLogPayload.ActiveMissionEntry> missionLogData = new ArrayList<>();
+    private OpenMissionInfoPayload currentMissionInfo = null;
+    private MenuState previousMissionState = MenuState.MISSION_LOG;  // Track where we came from
+    private int missionInfoScrollOffset = 0;  // Scroll offset for mission info screen
+    private int missionInfoContentHeight = 0;  // Total height of mission info content
 
     private enum MenuState {
         MAIN_MENU,
         PAD_LIST,
         SIGNAL_LIST,
-        SCAN_RESULTS
+        SCAN_RESULTS,
+        STARFLEET_COMMAND,
+        MISSION_BOARD,
+        MISSION_LOG,
+        MISSION_INFO,
+        SERVICE_RECORD
     }
 
     public TricorderScreen(int fuel, int slips, boolean hasRoom,
@@ -126,6 +153,11 @@ public class TricorderScreen extends Screen {
             case PAD_LIST -> buildPadList();
             case SIGNAL_LIST -> buildSignalList();
             case SCAN_RESULTS -> buildScanResults();
+            case STARFLEET_COMMAND -> buildStarfleetCommand();
+            case MISSION_BOARD -> buildMissionBoard();
+            case MISSION_LOG -> buildMissionLog();
+            case MISSION_INFO -> buildMissionInfo();
+            case SERVICE_RECORD -> buildServiceRecord();
         }
     }
 
@@ -188,10 +220,15 @@ public class TricorderScreen extends Screen {
                 LCARSRenderer.PEACH, LCARSRenderer.ORANGE
         ));
 
-        // Placeholder for testing scrolling
+        // Starfleet Command submenu
         menuButtons.add(new MenuButton(
                 Component.literal("STARFLEET COMMAND"),
-                button -> { /* Placeholder - no action */ },
+                button -> {
+                    // Request mission data from server before opening menu
+                    executeCommandNoClose("trek starfleet rank");
+                    currentState = MenuState.STARFLEET_COMMAND;
+                    rebuildButtons();
+                },
                 LCARSRenderer.BLUE, LCARSRenderer.LAVENDER
         ));
 
@@ -487,12 +524,337 @@ public class TricorderScreen extends Screen {
         addBackButton(() -> { cameFromMenu = false; });
     }
 
+    private void buildStarfleetCommand() {
+        int[] contentBounds = LCARSRenderer.getContentBounds(panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT);
+        int contentX = contentBounds[0];
+        int contentY = contentBounds[1];
+        int contentW = contentBounds[2];
+
+        int buttonX = contentX + (contentW - BUTTON_WIDTH) / 2;
+        int buttonY = contentY + BUTTON_Y_OFFSET;
+
+        List<MenuButton> menuButtons = new ArrayList<>();
+
+        // Mission Board - view available missions
+        menuButtons.add(new MenuButton(
+                Component.literal("MISSION BOARD"),
+                button -> {
+                    // Request mission board data then show
+                    requestMissionBoard();
+                },
+                LCARSRenderer.PEACH, LCARSRenderer.ORANGE
+        ));
+
+        // Mission Log - view active missions
+        menuButtons.add(new MenuButton(
+                Component.literal("MISSION LOG"),
+                button -> {
+                    requestMissionLog();
+                },
+                LCARSRenderer.PEACH, LCARSRenderer.ORANGE
+        ));
+
+        // Service Record - view rank and stats
+        menuButtons.add(new MenuButton(
+                Component.literal("SERVICE RECORD"),
+                button -> {
+                    // Request service record data, the handler will switch to SERVICE_RECORD state
+                    executeCommandNoClose("trek starfleet rank");
+                },
+                LCARSRenderer.LAVENDER, LCARSRenderer.PURPLE
+        ));
+
+        // Contribution - for backward compatibility
+        menuButtons.add(new MenuButton(
+                Component.literal("CONTRIBUTE LATINUM"),
+                button -> executeCommand("trek contribution"),
+                LCARSRenderer.LAVENDER, LCARSRenderer.PURPLE
+        ));
+
+        renderScrollableButtons(menuButtons, buttonX, buttonY, 0, offset -> {}, true);
+
+        // Back button
+        addBackButton(null);
+    }
+
+    private void buildMissionBoard() {
+        int[] contentBounds = LCARSRenderer.getContentBounds(panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT);
+        int contentX = contentBounds[0];
+        int contentY = contentBounds[1];
+        int contentW = contentBounds[2];
+
+        int buttonX = contentX + (contentW - BUTTON_WIDTH) / 2;
+        int buttonY = contentY + BUTTON_Y_OFFSET;
+
+        List<MenuButton> missionButtons = new ArrayList<>();
+
+        for (OpenMissionBoardPayload.MissionSummary mission : missionBoardData) {
+            String title = mission.title().toUpperCase();
+            if (title.length() > 20) title = title.substring(0, 17) + "...";
+
+            // Color based on status
+            int normalColor = mission.isParticipating() ? LCARSRenderer.GREEN :
+                    (mission.canAccept() ? LCARSRenderer.PEACH : LCARSRenderer.GRAY);
+            int hoverColor = mission.isParticipating() ? LCARSRenderer.LAVENDER :
+                    (mission.canAccept() ? LCARSRenderer.ORANGE : LCARSRenderer.GRAY);
+
+            String missionId = mission.missionId().toString();
+            missionButtons.add(new MenuButton(
+                    Component.literal(title),
+                    button -> {
+                        if (mission.isParticipating()) {
+                            // Already on mission - show info
+                            executeCommandNoClose("trek mission info " + missionId);
+                        } else if (mission.canAccept()) {
+                            // Show mission info (can accept from there)
+                            executeCommandNoClose("trek mission info " + missionId);
+                        }
+                    },
+                    normalColor, hoverColor
+            ));
+        }
+
+        // Clamp scroll offset
+        int maxOffset = Math.max(0, missionButtons.size() - MAX_VISIBLE_BUTTONS);
+        missionBoardScrollOffset = Math.max(0, Math.min(missionBoardScrollOffset, maxOffset));
+
+        renderScrollableButtons(missionButtons, buttonX, buttonY, missionBoardScrollOffset,
+                offset -> { missionBoardScrollOffset = offset; rebuildButtons(); }, true);
+
+        // Back button - return to Starfleet Command
+        addBottomBarButton("< BACK", () -> {
+            missionBoardScrollOffset = 0;
+            currentState = MenuState.STARFLEET_COMMAND;
+            rebuildButtons();
+        });
+    }
+
+    private void buildMissionLog() {
+        int[] contentBounds = LCARSRenderer.getContentBounds(panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT);
+        int contentX = contentBounds[0];
+        int contentY = contentBounds[1];
+        int contentW = contentBounds[2];
+
+        int buttonX = contentX + (contentW - BUTTON_WIDTH) / 2;
+        int buttonY = contentY + BUTTON_Y_OFFSET;
+
+        List<MenuButton> missionButtons = new ArrayList<>();
+
+        for (OpenMissionLogPayload.ActiveMissionEntry mission : missionLogData) {
+            String title = mission.title().toUpperCase();
+            if (title.length() > 14) title = title.substring(0, 11) + "...";
+
+            // Show detailed progress text (e.g., "12/20" or "45/60s")
+            String displayTitle = title + " " + mission.progressText();
+
+            String missionId = mission.missionId().toString();
+            missionButtons.add(new MenuButton(
+                    Component.literal(displayTitle),
+                    button -> executeCommandNoClose("trek mission info " + missionId),
+                    LCARSRenderer.GREEN, LCARSRenderer.LAVENDER
+            ));
+        }
+
+        // Clamp scroll offset
+        int maxOffset = Math.max(0, missionButtons.size() - MAX_VISIBLE_BUTTONS);
+        missionLogScrollOffset = Math.max(0, Math.min(missionLogScrollOffset, maxOffset));
+
+        renderScrollableButtons(missionButtons, buttonX, buttonY, missionLogScrollOffset,
+                offset -> { missionLogScrollOffset = offset; rebuildButtons(); }, true);
+
+        // Back button - return to Starfleet Command
+        addBottomBarButton("< BACK", () -> {
+            missionLogScrollOffset = 0;
+            currentState = MenuState.STARFLEET_COMMAND;
+            rebuildButtons();
+        });
+    }
+
+    private void buildServiceRecord() {
+        int[] contentBounds = LCARSRenderer.getContentBounds(panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT);
+        int contentX = contentBounds[0];
+        int contentY = contentBounds[1];
+        int contentW = contentBounds[2];
+
+        // Service Record is a display-only screen with stats
+        // No interactive buttons except back
+
+        // Back button - return to Starfleet Command
+        addBottomBarButton("< BACK", () -> {
+            currentState = MenuState.STARFLEET_COMMAND;
+            rebuildButtons();
+        });
+    }
+
+    private void buildMissionInfo() {
+        int[] contentBounds = LCARSRenderer.getContentBounds(panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT);
+        int contentX = contentBounds[0];
+        int contentY = contentBounds[1];
+        int contentW = contentBounds[2];
+
+        // Action button in slot 5 (6th position), text scrolls in slots 0-4 area
+        if (currentMissionInfo != null) {
+            int buttonX = contentX + (contentW - BUTTON_WIDTH) / 2;
+            int buttonY = contentY + BUTTON_Y_OFFSET + (5 * (BUTTON_HEIGHT + BUTTON_SPACING));
+
+            if (currentMissionInfo.isParticipating()) {
+                // Abandon button
+                String missionId = currentMissionInfo.missionId().toString();
+                addRenderableWidget(LCARSButton.lcarsBuilder(
+                        Component.literal("ABANDON MISSION"),
+                        button -> executeCommand("trek mission abandon " + missionId)
+                ).bounds(buttonX, buttonY, BUTTON_WIDTH, BUTTON_HEIGHT)
+                        .colors(LCARSRenderer.RED, LCARSRenderer.ORANGE)
+                        .build());
+            } else if (currentMissionInfo.canAccept()) {
+                // Accept button
+                String missionId = currentMissionInfo.missionId().toString();
+                addRenderableWidget(LCARSButton.lcarsBuilder(
+                        Component.literal("ACCEPT MISSION"),
+                        button -> executeCommand("trek mission accept " + missionId)
+                ).bounds(buttonX, buttonY, BUTTON_WIDTH, BUTTON_HEIGHT)
+                        .colors(LCARSRenderer.GREEN, LCARSRenderer.LAVENDER)
+                        .build());
+            }
+        }
+
+        // Scroll buttons in sidebar if content is scrollable
+        if (missionInfoContentHeight > 0) {
+            int scrollAreaHeight = getScrollableTextAreaHeight();
+            if (missionInfoContentHeight > scrollAreaHeight) {
+                int navButtonSize = 16;
+                int navX = panelLeft + 4;
+                int navY = panelTop + 116;
+
+                int maxScroll = missionInfoContentHeight - scrollAreaHeight;
+
+                addRenderableWidget(LCARSButton.lcarsBuilder(
+                        Component.literal("^"),
+                        button -> { if (missionInfoScrollOffset > 0) { missionInfoScrollOffset = Math.max(0, missionInfoScrollOffset - 20); } }
+                ).bounds(navX, navY, navButtonSize, navButtonSize)
+                        .colors(LCARSRenderer.ORANGE, LCARSRenderer.LAVENDER)
+                        .build());
+
+                addRenderableWidget(LCARSButton.lcarsBuilder(
+                        Component.literal("v"),
+                        button -> { if (missionInfoScrollOffset < maxScroll) { missionInfoScrollOffset = Math.min(maxScroll, missionInfoScrollOffset + 20); } }
+                ).bounds(navX + navButtonSize + 2, navY, navButtonSize, navButtonSize)
+                        .colors(LCARSRenderer.ORANGE, LCARSRenderer.LAVENDER)
+                        .build());
+            }
+        }
+
+        // Back button - return to previous mission screen
+        addBottomBarButton("< BACK", () -> {
+            missionInfoScrollOffset = 0;
+            currentState = previousMissionState;
+            rebuildButtons();
+        });
+    }
+
+    /**
+     * Get the height of the scrollable text area (5 button slots).
+     * BUTTON_SPACING provides the built-in 6px margin between slots.
+     */
+    private int getScrollableTextAreaHeight() {
+        return 5 * (BUTTON_HEIGHT + BUTTON_SPACING);
+    }
+
+    /**
+     * Request mission board data from server.
+     */
+    private void requestMissionBoard() {
+        executeCommandNoClose("trek mission list");
+        // For now, switch to mission board immediately
+        // In a full implementation, the server would send a payload
+        currentState = MenuState.MISSION_BOARD;
+        rebuildButtons();
+    }
+
+    /**
+     * Request mission log data from server.
+     */
+    private void requestMissionLog() {
+        executeCommandNoClose("trek mission log");
+        currentState = MenuState.MISSION_LOG;
+        rebuildButtons();
+    }
+
+    /**
+     * Update mission board data from server payload.
+     */
+    public void updateMissionBoard(List<OpenMissionBoardPayload.MissionSummary> missions) {
+        this.missionBoardData = new ArrayList<>(missions);
+        if (currentState == MenuState.MISSION_BOARD) {
+            rebuildButtons();
+        }
+    }
+
+    /**
+     * Update mission log data from server payload.
+     */
+    public void updateMissionLog(List<OpenMissionLogPayload.ActiveMissionEntry> missions) {
+        this.missionLogData = new ArrayList<>(missions);
+        if (currentState == MenuState.MISSION_LOG) {
+            rebuildButtons();
+        }
+    }
+
+    /**
+     * Update player's Starfleet record from server payload.
+     */
+    public void updateStarfleetRecord(String rankTitle, long xp, int activeMissions, int completedMissions) {
+        this.playerRankTitle = rankTitle;
+        this.playerXp = xp;
+        this.activeMissionCount = activeMissions;
+        this.completedMissionCount = completedMissions;
+    }
+
+    /**
+     * Update service record data from server payload and switch to service record screen.
+     */
+    public void updateServiceRecord(OpenServiceRecordPayload payload) {
+        this.playerRankTitle = payload.rankName();
+        this.playerXp = payload.totalXp();
+        this.xpToNextRank = payload.xpToNextRank();
+        this.activeMissionCount = payload.activeMissionCount();
+        this.completedMissionCount = payload.completedMissionCount();
+        this.totalKills = payload.totalKills();
+        this.totalScans = payload.totalScans();
+        this.biomesExplored = payload.biomesExplored();
+        // Switch to service record view
+        currentState = MenuState.SERVICE_RECORD;
+        rebuildButtons();
+    }
+
+    /**
+     * Update mission info data from server payload and switch to mission info screen.
+     */
+    public void updateMissionInfo(OpenMissionInfoPayload payload) {
+        this.currentMissionInfo = payload;
+        this.missionInfoScrollOffset = 0;  // Reset scroll when viewing new mission
+        this.missionInfoContentHeight = 0;  // Will be calculated on first render
+        // Track where we came from (MISSION_LOG or MISSION_BOARD)
+        if (currentState == MenuState.MISSION_LOG || currentState == MenuState.MISSION_BOARD) {
+            this.previousMissionState = currentState;
+        }
+        currentState = MenuState.MISSION_INFO;
+        rebuildButtons();
+    }
+
     private void executeCommand(String command) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player != null && mc.player.connection != null) {
             mc.player.connection.sendCommand(command);
         }
         this.onClose();
+    }
+
+    private void executeCommandNoClose(String command) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player != null && mc.player.connection != null) {
+            mc.player.connection.sendCommand(command);
+        }
     }
 
     @Override
@@ -513,6 +875,11 @@ public class TricorderScreen extends Screen {
                 int count = scanBlocks != null ? scanBlocks.size() : 0;
                 yield count + " ANOMAL" + (count == 1 ? "Y" : "IES");
             }
+            case STARFLEET_COMMAND -> "STARFLEET";
+            case MISSION_BOARD -> "MISSIONS";
+            case MISSION_LOG -> "ACTIVE";
+            case MISSION_INFO -> "DETAILS";
+            case SERVICE_RECORD -> "RECORD";
         };
         LCARSRenderer.drawLCARSFrame(guiGraphics, panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT, titleText, this.font);
     }
@@ -542,6 +909,20 @@ public class TricorderScreen extends Screen {
             int msgWidth = this.font.width(msg);
             guiGraphics.drawString(this.font, msg, contentX + (contentW - msgWidth) / 2, contentY + 40, LCARSRenderer.ORANGE);
             String msg2 = "DETECTED";
+            int msg2Width = this.font.width(msg2);
+            guiGraphics.drawString(this.font, msg2, contentX + (contentW - msg2Width) / 2, contentY + 52, LCARSRenderer.ORANGE);
+        } else if (currentState == MenuState.MISSION_BOARD && missionBoardData.isEmpty()) {
+            String msg = "NO MISSIONS";
+            int msgWidth = this.font.width(msg);
+            guiGraphics.drawString(this.font, msg, contentX + (contentW - msgWidth) / 2, contentY + 40, LCARSRenderer.ORANGE);
+            String msg2 = "AVAILABLE";
+            int msg2Width = this.font.width(msg2);
+            guiGraphics.drawString(this.font, msg2, contentX + (contentW - msg2Width) / 2, contentY + 52, LCARSRenderer.ORANGE);
+        } else if (currentState == MenuState.MISSION_LOG && missionLogData.isEmpty()) {
+            String msg = "NO ACTIVE MISSIONS";
+            int msgWidth = this.font.width(msg);
+            guiGraphics.drawString(this.font, msg, contentX + (contentW - msgWidth) / 2, contentY + 40, LCARSRenderer.ORANGE);
+            String msg2 = "USE MISSION BOARD";
             int msg2Width = this.font.width(msg2);
             guiGraphics.drawString(this.font, msg2, contentX + (contentW - msg2Width) / 2, contentY + 52, LCARSRenderer.ORANGE);
         }
@@ -580,10 +961,277 @@ public class TricorderScreen extends Screen {
             // Scroll buttons (if needed) are placed below this by buildMainMenu()
         }
 
+        // Draw rank info in sidebar for Starfleet menus
+        if (currentState == MenuState.STARFLEET_COMMAND ||
+            currentState == MenuState.MISSION_BOARD ||
+            currentState == MenuState.MISSION_LOG) {
+            int sidebarX = panelLeft + 4;
+            int sidebarStartY = panelTop + 70;
+
+            // Rank display (abbreviated)
+            String rankAbbr = playerRankTitle.length() > 4 ?
+                    playerRankTitle.substring(0, 4).toUpperCase() :
+                    playerRankTitle.toUpperCase();
+            guiGraphics.drawString(this.font, rankAbbr, sidebarX, sidebarStartY, LCARSRenderer.BLUE, false);
+
+            // XP display
+            String xpStr = playerXp >= 1000 ? (playerXp / 1000) + "K" : String.valueOf(playerXp);
+            guiGraphics.drawString(this.font, xpStr + " XP", sidebarX, sidebarStartY + 12, LCARSRenderer.TEXT_DARK, false);
+        }
+
         // Draw scan results with isometric 3D visualization
         if (currentState == MenuState.SCAN_RESULTS) {
             renderScanResults(guiGraphics, contentX, contentY, contentW, contentH);
         }
+
+        // Draw service record content
+        if (currentState == MenuState.SERVICE_RECORD) {
+            renderServiceRecord(guiGraphics, contentX, contentY, contentW, contentH);
+        }
+
+        // Draw mission info content
+        if (currentState == MenuState.MISSION_INFO) {
+            renderMissionInfo(guiGraphics, contentX, contentY, contentW, contentH);
+        }
+    }
+
+    /**
+     * Renders the service record showing player's Starfleet career information.
+     */
+    private void renderServiceRecord(GuiGraphics g, int contentX, int contentY, int contentW, int contentH) {
+        int y = contentY + 10;
+        int labelX = contentX + 10;
+        int valueX = contentX + contentW - 10;
+
+        // Rank title (centered, large)
+        String rankDisplay = playerRankTitle.toUpperCase();
+        int rankWidth = this.font.width(rankDisplay);
+        g.drawString(this.font, rankDisplay, contentX + (contentW - rankWidth) / 2, y, LCARSRenderer.BLUE);
+        y += 18;
+
+        // XP Progress bar
+        int barX = labelX;
+        int barWidth = contentW - 20;
+        int barHeight = 8;
+
+        // Calculate progress to next rank
+        double progress = 0.0;
+        if (xpToNextRank > 0) {
+            progress = Math.min(1.0, (double) playerXp / (playerXp + xpToNextRank));
+        } else {
+            progress = 1.0; // Max rank
+        }
+
+        // Draw progress bar background
+        g.fill(barX, y, barX + barWidth, y + barHeight, 0xFF333333);
+        // Draw progress fill
+        int fillWidth = (int) (barWidth * progress);
+        if (fillWidth > 0) {
+            g.fill(barX, y, barX + fillWidth, y + barHeight, LCARSRenderer.BLUE);
+        }
+        // Draw border
+        g.renderOutline(barX, y, barWidth, barHeight, LCARSRenderer.LAVENDER);
+        y += barHeight + 4;
+
+        // XP text
+        String xpText = "XP: " + playerXp;
+        if (xpToNextRank > 0) {
+            xpText += " / " + (playerXp + xpToNextRank);
+        } else {
+            xpText += " (MAX RANK)";
+        }
+        int xpWidth = this.font.width(xpText);
+        g.drawString(this.font, xpText, contentX + (contentW - xpWidth) / 2, y, LCARSRenderer.LAVENDER);
+        y += 20;
+
+        // Stats section
+        int lineHeight = 14;
+
+        // Missions row
+        String missionsLabel = "MISSIONS";
+        String missionsValue = activeMissionCount + " ACTIVE / " + completedMissionCount + " COMPLETED";
+        g.drawString(this.font, missionsLabel, labelX, y, LCARSRenderer.PEACH);
+        int mvWidth = this.font.width(missionsValue);
+        g.drawString(this.font, missionsValue, valueX - mvWidth, y, LCARSRenderer.TEXT_DARK);
+        y += lineHeight;
+
+        // Kills row
+        String killsLabel = "HOSTILES NEUTRALIZED";
+        String killsValue = String.valueOf(totalKills);
+        g.drawString(this.font, killsLabel, labelX, y, LCARSRenderer.PEACH);
+        int kvWidth = this.font.width(killsValue);
+        g.drawString(this.font, killsValue, valueX - kvWidth, y, LCARSRenderer.TEXT_DARK);
+        y += lineHeight;
+
+        // Scans row
+        String scansLabel = "SCANS PERFORMED";
+        String scansValue = String.valueOf(totalScans);
+        g.drawString(this.font, scansLabel, labelX, y, LCARSRenderer.PEACH);
+        int svWidth = this.font.width(scansValue);
+        g.drawString(this.font, scansValue, valueX - svWidth, y, LCARSRenderer.TEXT_DARK);
+        y += lineHeight;
+
+        // Biomes row
+        String biomesLabel = "BIOMES EXPLORED";
+        String biomesValue = String.valueOf(biomesExplored);
+        g.drawString(this.font, biomesLabel, labelX, y, LCARSRenderer.PEACH);
+        int bvWidth = this.font.width(biomesValue);
+        g.drawString(this.font, biomesValue, valueX - bvWidth, y, LCARSRenderer.TEXT_DARK);
+    }
+
+    /**
+     * Renders the mission info screen showing detailed mission information.
+     * Content is scrollable in slots 0-4 area; button is fixed in slot 5.
+     */
+    private void renderMissionInfo(GuiGraphics g, int contentX, int contentY, int contentW, int contentH) {
+        if (currentMissionInfo == null) {
+            String msg = "NO MISSION DATA";
+            int msgWidth = this.font.width(msg);
+            g.drawString(this.font, msg, contentX + (contentW - msgWidth) / 2, contentY + 40, LCARSRenderer.ORANGE);
+            return;
+        }
+
+        int labelX = contentX + 5;
+        int valueX = contentX + contentW - 5;
+        int lineHeight = 11;
+
+        // Calculate scrollable area (slots 0-4, above the action button in slot 5)
+        int scrollAreaHeight = getScrollableTextAreaHeight();
+        int scrollAreaTop = contentY + BUTTON_Y_OFFSET;
+        int scrollAreaBottom = scrollAreaTop + scrollAreaHeight;
+
+        // First pass: calculate total content height (without rendering)
+        int totalHeight = 0;
+        totalHeight += 14; // title
+        totalHeight += 14; // status
+
+        String desc = currentMissionInfo.description();
+        java.util.List<String> descLines = wrapText(desc, contentW - 10);
+        totalHeight += descLines.size() * lineHeight;
+        totalHeight += 4; // gap
+
+        totalHeight += lineHeight; // "OBJECTIVE" label
+        String objDesc = currentMissionInfo.objectiveDescription();
+        java.util.List<String> objLines = wrapText(objDesc, contentW - 10);
+        totalHeight += objLines.size() * lineHeight;
+        totalHeight += 4; // gap
+
+        totalHeight += 8 + 3; // progress bar + gap
+        totalHeight += 14; // progress text
+        totalHeight += lineHeight + 2; // XP/Rank line
+        totalHeight += lineHeight; // participants
+
+        missionInfoContentHeight = totalHeight;
+
+        // Clamp scroll offset
+        int maxScroll = Math.max(0, totalHeight - scrollAreaHeight);
+        missionInfoScrollOffset = Math.max(0, Math.min(missionInfoScrollOffset, maxScroll));
+
+        // Enable scissor to clip content to scrollable area
+        g.enableScissor(contentX, scrollAreaTop, contentX + contentW, scrollAreaBottom);
+
+        // Start rendering with scroll offset applied
+        int y = scrollAreaTop - missionInfoScrollOffset;
+
+        // Mission title (centered) - no truncation
+        String titleDisplay = currentMissionInfo.title().toUpperCase();
+        int titleWidth = this.font.width(titleDisplay);
+        g.drawString(this.font, titleDisplay, contentX + (contentW - titleWidth) / 2, y, LCARSRenderer.ORANGE);
+        y += 14;
+
+        // Status indicator
+        String statusStr = currentMissionInfo.isParticipating() ? "[ACTIVE]" :
+                (currentMissionInfo.canAccept() ? "[AVAILABLE]" : "[LOCKED]");
+        int statusColor = currentMissionInfo.isParticipating() ? LCARSRenderer.GREEN :
+                (currentMissionInfo.canAccept() ? LCARSRenderer.PEACH : LCARSRenderer.GRAY);
+        int statusWidth = this.font.width(statusStr);
+        g.drawString(this.font, statusStr, contentX + (contentW - statusWidth) / 2, y, statusColor);
+        y += 14;
+
+        // Description (word-wrapped) - all lines
+        for (String line : descLines) {
+            g.drawString(this.font, line, labelX, y, LCARSRenderer.LAVENDER);
+            y += lineHeight;
+        }
+        y += 4;
+
+        // Objective label
+        g.drawString(this.font, "OBJECTIVE", labelX, y, LCARSRenderer.PEACH);
+        y += lineHeight;
+
+        // Objective description - all lines
+        for (String line : objLines) {
+            g.drawString(this.font, line, labelX, y, LCARSRenderer.LAVENDER);
+            y += lineHeight;
+        }
+        y += 4;
+
+        // Progress bar
+        int barX = labelX;
+        int barWidth = contentW - 10;
+        int barHeight = 8;
+        double progress = currentMissionInfo.progressPercent();
+
+        g.fill(barX, y, barX + barWidth, y + barHeight, 0xFF333333);
+        int fillWidth = (int) (barWidth * progress);
+        if (fillWidth > 0) {
+            g.fill(barX, y, barX + fillWidth, y + barHeight, LCARSRenderer.GREEN);
+        }
+        g.renderOutline(barX, y, barWidth, barHeight, LCARSRenderer.LAVENDER);
+        y += barHeight + 3;
+
+        // Progress text
+        String progressStr = currentMissionInfo.progressText() + " (" +
+                String.format("%.0f%%", progress * 100) + ")";
+        int progressWidth = this.font.width(progressStr);
+        g.drawString(this.font, progressStr, contentX + (contentW - progressWidth) / 2, y, LCARSRenderer.LAVENDER);
+        y += 14;
+
+        // XP Reward and Min Rank on same line
+        String xpLabel = "XP: " + currentMissionInfo.xpReward();
+        String rankLabel = "RANK: " + currentMissionInfo.minRankTitle().toUpperCase();
+        g.drawString(this.font, xpLabel, labelX, y, LCARSRenderer.GREEN);
+        int rankWidth = this.font.width(rankLabel);
+        g.drawString(this.font, rankLabel, valueX - rankWidth, y, LCARSRenderer.BLUE);
+        y += lineHeight + 2;
+
+        // Participants
+        String partLabel = "PARTICIPANTS: " + currentMissionInfo.participantCount();
+        g.drawString(this.font, partLabel, labelX, y, LCARSRenderer.LAVENDER);
+
+        // Disable scissor
+        g.disableScissor();
+    }
+
+    /**
+     * Helper to wrap text into lines that fit within a given width.
+     */
+    private java.util.List<String> wrapText(String text, int maxWidth) {
+        java.util.List<String> lines = new ArrayList<>();
+        if (text == null || text.isEmpty()) return lines;
+
+        String[] words = text.split(" ");
+        StringBuilder currentLine = new StringBuilder();
+
+        for (String word : words) {
+            String testLine = currentLine.length() == 0 ? word : currentLine + " " + word;
+            if (this.font.width(testLine) <= maxWidth) {
+                if (currentLine.length() > 0) currentLine.append(" ");
+                currentLine.append(word);
+            } else {
+                if (currentLine.length() > 0) {
+                    lines.add(currentLine.toString());
+                    currentLine = new StringBuilder(word);
+                } else {
+                    // Word is too long, just add it
+                    lines.add(word);
+                }
+            }
+        }
+        if (currentLine.length() > 0) {
+            lines.add(currentLine.toString());
+        }
+        return lines;
     }
 
     /**
@@ -1395,6 +2043,19 @@ public class TricorderScreen extends Screen {
                 signalScrollOffset++;
                 rebuildButtons();
                 return true;
+            }
+        } else if (currentState == MenuState.MISSION_INFO && missionInfoContentHeight > 0) {
+            int scrollAreaHeight = getScrollableTextAreaHeight();
+            int maxScroll = Math.max(0, missionInfoContentHeight - scrollAreaHeight);
+            if (maxScroll > 0) {
+                int scrollAmount = 15;  // Pixels per scroll
+                if (scrollY > 0 && missionInfoScrollOffset > 0) {
+                    missionInfoScrollOffset = Math.max(0, missionInfoScrollOffset - scrollAmount);
+                    return true;
+                } else if (scrollY < 0 && missionInfoScrollOffset < maxScroll) {
+                    missionInfoScrollOffset = Math.min(maxScroll, missionInfoScrollOffset + scrollAmount);
+                    return true;
+                }
             }
         }
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
