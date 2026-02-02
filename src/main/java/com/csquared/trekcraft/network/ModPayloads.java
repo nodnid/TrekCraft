@@ -257,6 +257,15 @@ public class ModPayloads {
                     handleAbandonMission(player, payload);
                 }
         );
+
+        registrar.playToServer(
+                CreateMissionPayload.TYPE,
+                CreateMissionPayload.STREAM_CODEC,
+                (payload, context) -> {
+                    ServerPlayer player = (ServerPlayer) context.player();
+                    handleCreateMission(player, payload);
+                }
+        );
     }
 
     // This method uses a fully qualified class name string to defer class loading
@@ -584,6 +593,70 @@ public class ModPayloads {
         if (result != MissionService.MissionResult.SUCCESS) {
             player.displayClientMessage(
                     Component.literal(MissionService.getResultMessage(result)), true);
+        }
+    }
+
+    private static void handleCreateMission(ServerPlayer player, CreateMissionPayload payload) {
+        // Parse objective
+        com.csquared.trekcraft.mission.MissionObjective objective = parseObjectiveFromPayload(
+                payload.objectiveType(), payload.objectiveData());
+
+        if (objective == null) {
+            player.displayClientMessage(
+                    Component.literal("Invalid objective configuration"), true);
+            return;
+        }
+
+        // Parse rank
+        com.csquared.trekcraft.starfleet.StarfleetRank minRank;
+        try {
+            minRank = com.csquared.trekcraft.starfleet.StarfleetRank.valueOf(payload.minRank());
+        } catch (Exception e) {
+            minRank = com.csquared.trekcraft.starfleet.StarfleetRank.CREWMAN;
+        }
+
+        // Create mission via service
+        MissionService.MissionResult result = MissionService.createMission(
+                player,
+                payload.title(),
+                payload.description(),
+                objective,
+                payload.xpReward(),
+                minRank
+        );
+
+        if (result != MissionService.MissionResult.SUCCESS) {
+            player.displayClientMessage(
+                    Component.literal(MissionService.getResultMessage(result)), true);
+        }
+    }
+
+    private static com.csquared.trekcraft.mission.MissionObjective parseObjectiveFromPayload(String type, String data) {
+        String[] parts = data.split("\\|", -1);  // -1 keeps empty strings
+        try {
+            return switch (type) {
+                case "kill" -> new com.csquared.trekcraft.mission.objectives.KillObjective(
+                        parts[0].isEmpty() ? null : parts[0],  // entityType or null for any
+                        Integer.parseInt(parts[1])              // count
+                );
+                case "gather" -> new com.csquared.trekcraft.mission.objectives.GatherObjective(
+                        parts[0],                               // itemId
+                        Integer.parseInt(parts[1])              // quantity
+                );
+                case "explore" -> new com.csquared.trekcraft.mission.objectives.ExploreObjective(
+                        null,                                   // no specific biomes
+                        Integer.parseInt(parts[0])              // count
+                );
+                case "scan" -> new com.csquared.trekcraft.mission.objectives.ScanObjective(
+                        parts[0].isEmpty() ? null : java.util.Arrays.asList(parts[0].split(",")),
+                        parts[1].isEmpty() ? null : java.util.Arrays.asList(parts[1].split(",")),
+                        Integer.parseInt(parts[2])
+                );
+                default -> null;
+            };
+        } catch (Exception e) {
+            TrekCraftMod.LOGGER.error("Failed to parse objective: {} / {}", type, data, e);
+            return null;
         }
     }
 }

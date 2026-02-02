@@ -91,6 +91,7 @@ public class TricorderScreen extends Screen {
     private long xpToNextRank = 100;
     private int activeMissionCount = 0;
     private int completedMissionCount = 0;
+    private boolean canCreateMissions = false;
     private int totalKills = 0;
     private int totalScans = 0;
     private int biomesExplored = 0;
@@ -101,6 +102,21 @@ public class TricorderScreen extends Screen {
     private int missionInfoScrollOffset = 0;  // Scroll offset for mission info screen
     private int missionInfoContentHeight = 0;  // Total height of mission info content
 
+    // Mission creation wizard state
+    private String createTitle = "";
+    private String createDescription = "";
+    private int createObjectiveTypeIndex = 0;   // Index into OBJECTIVE_TYPES
+    private String createParam1 = "";           // Entity/item type or empty
+    private int createParamCount = 10;          // Count/quantity (default 10)
+    private int createXpReward = 100;           // XP reward (default 100)
+    private int createMinRankIndex = 0;         // Index into SELECTABLE_RANKS
+    private boolean pendingServiceRecordView = false;  // True when we want to view SERVICE_RECORD after data arrives
+
+    private static final String[] OBJECTIVE_TYPES = {"KILL", "GATHER", "EXPLORE", "SCAN"};
+    private static final String[] OBJECTIVE_LABELS = {
+        "Kill Hostiles", "Gather Items", "Explore Biomes", "Scan Entities"
+    };
+
     private enum MenuState {
         MAIN_MENU,
         PAD_LIST,
@@ -110,18 +126,24 @@ public class TricorderScreen extends Screen {
         MISSION_BOARD,
         MISSION_LOG,
         MISSION_INFO,
-        SERVICE_RECORD
+        SERVICE_RECORD,
+        CREATE_MISSION_INFO,      // Step 1: title + description
+        CREATE_MISSION_CONFIG,    // Step 2: objective type + parameters
+        CREATE_MISSION_REWARDS,   // Step 3: XP + min rank
+        CREATE_MISSION_CONFIRM    // Step 4: review + post
     }
 
     public TricorderScreen(int fuel, int slips, boolean hasRoom,
                            List<OpenTricorderScreenPayload.PadEntry> pads,
-                           List<OpenTricorderScreenPayload.SignalEntry> signals) {
+                           List<OpenTricorderScreenPayload.SignalEntry> signals,
+                           boolean canCreateMissions) {
         super(Component.translatable("screen.trekcraft.tricorder"));
         this.fuel = fuel;
         this.slips = slips;
         this.hasRoom = hasRoom;
         this.pads = pads;
         this.signals = signals;
+        this.canCreateMissions = canCreateMissions;
     }
 
     /**
@@ -129,7 +151,7 @@ public class TricorderScreen extends Screen {
      */
     public static TricorderScreen createForScanResults(String facing, List<ScanResultPayload.ScannedBlock> blocks,
                                                         List<ScanResultPayload.ScannedEntity> entities) {
-        TricorderScreen screen = new TricorderScreen(0, 0, false, List.of(), List.of());
+        TricorderScreen screen = new TricorderScreen(0, 0, false, List.of(), List.of(), false);
         screen.scanFacing = facing;
         screen.scanBlocks = blocks;
         screen.scanEntities = entities != null ? entities : List.of();
@@ -158,6 +180,10 @@ public class TricorderScreen extends Screen {
             case MISSION_LOG -> buildMissionLog();
             case MISSION_INFO -> buildMissionInfo();
             case SERVICE_RECORD -> buildServiceRecord();
+            case CREATE_MISSION_INFO -> buildCreateMissionInfo();
+            case CREATE_MISSION_CONFIG -> buildCreateMissionConfig();
+            case CREATE_MISSION_REWARDS -> buildCreateMissionRewards();
+            case CREATE_MISSION_CONFIRM -> buildCreateMissionConfirm();
         }
     }
 
@@ -224,8 +250,6 @@ public class TricorderScreen extends Screen {
         menuButtons.add(new MenuButton(
                 Component.literal("STARFLEET COMMAND"),
                 button -> {
-                    // Request mission data from server before opening menu
-                    executeCommandNoClose("trek starfleet rank");
                     currentState = MenuState.STARFLEET_COMMAND;
                     rebuildButtons();
                 },
@@ -559,6 +583,7 @@ public class TricorderScreen extends Screen {
                 Component.literal("SERVICE RECORD"),
                 button -> {
                     // Request service record data, the handler will switch to SERVICE_RECORD state
+                    pendingServiceRecordView = true;  // Switch to service record when data arrives
                     executeCommandNoClose("trek starfleet rank");
                 },
                 LCARSRenderer.LAVENDER, LCARSRenderer.PURPLE
@@ -570,6 +595,19 @@ public class TricorderScreen extends Screen {
                 button -> executeCommand("trek contribution"),
                 LCARSRenderer.LAVENDER, LCARSRenderer.PURPLE
         ));
+
+        // Create Mission - only show if player can create missions (LIEUTENANT+)
+        if (canCreateMissions) {
+            menuButtons.add(new MenuButton(
+                    Component.literal("CREATE MISSION"),
+                    button -> {
+                        resetCreateMissionState();
+                        currentState = MenuState.CREATE_MISSION_INFO;
+                        rebuildButtons();
+                    },
+                    LCARSRenderer.BLUE, LCARSRenderer.LAVENDER
+            ));
+        }
 
         renderScrollableButtons(menuButtons, buttonX, buttonY, 0, offset -> {}, true);
 
@@ -752,6 +790,375 @@ public class TricorderScreen extends Screen {
         });
     }
 
+    // ===== Mission Creation Wizard =====
+
+    /**
+     * Reset all mission creation wizard state to defaults.
+     */
+    private void resetCreateMissionState() {
+        createTitle = "";
+        createDescription = "";
+        createObjectiveTypeIndex = 0;
+        createParam1 = "";
+        createParamCount = 10;
+        createXpReward = 100;
+        createMinRankIndex = 0;
+    }
+
+    /**
+     * Step 1: Title and description input.
+     */
+    private void buildCreateMissionInfo() {
+        int[] bounds = LCARSRenderer.getContentBounds(panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT);
+        int contentX = bounds[0], contentY = bounds[1], contentW = bounds[2];
+        int inputWidth = BUTTON_WIDTH;
+        int inputX = contentX + (contentW - inputWidth) / 2;
+        int y = contentY + BUTTON_Y_OFFSET;
+
+        // Title input
+        net.minecraft.client.gui.components.EditBox titleInput = new net.minecraft.client.gui.components.EditBox(
+                font, inputX, y + 15, inputWidth, 18, Component.literal("Title"));
+        titleInput.setMaxLength(32);
+        titleInput.setValue(createTitle);
+        titleInput.setResponder(s -> createTitle = s);
+        addRenderableWidget(titleInput);
+
+        // Description input
+        net.minecraft.client.gui.components.EditBox descInput = new net.minecraft.client.gui.components.EditBox(
+                font, inputX, y + 55, inputWidth, 18, Component.literal("Description"));
+        descInput.setMaxLength(128);
+        descInput.setValue(createDescription);
+        descInput.setResponder(s -> createDescription = s);
+        addRenderableWidget(descInput);
+
+        // Navigation buttons
+        addBottomBarButton("< BACK", () -> {
+            currentState = MenuState.STARFLEET_COMMAND;
+            rebuildButtons();
+        });
+
+        // NEXT button - only proceed if title is not empty
+        int nextX = contentX + (contentW - 65) / 2 + 40;
+        int[] bottomBarBounds = LCARSRenderer.getBottomBarBounds(panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT);
+        int buttonY = bottomBarBounds[1] + (bottomBarBounds[3] - 15) / 2 + 12;
+        addRenderableWidget(LCARSButton.lcarsBuilder(
+                Component.literal("NEXT >"),
+                button -> {
+                    if (!createTitle.isEmpty()) {
+                        currentState = MenuState.CREATE_MISSION_CONFIG;
+                        rebuildButtons();
+                    }
+                }
+        ).bounds(nextX, buttonY, 65, 15)
+                .colors(LCARSRenderer.GREEN, LCARSRenderer.LAVENDER)
+                .centerAligned()
+                .build());
+    }
+
+    /**
+     * Step 2: Objective type and parameters.
+     */
+    private void buildCreateMissionConfig() {
+        int[] bounds = LCARSRenderer.getContentBounds(panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT);
+        int contentX = bounds[0], contentY = bounds[1], contentW = bounds[2];
+        int inputWidth = BUTTON_WIDTH;
+        int inputX = contentX + (contentW - inputWidth) / 2;
+        int y = contentY + BUTTON_Y_OFFSET;
+
+        // Objective Type buttons (cycle through with left/right buttons)
+        int typeButtonY = y + 15;
+
+        // Left arrow button
+        addRenderableWidget(LCARSButton.lcarsBuilder(
+                Component.literal("<"),
+                button -> {
+                    createObjectiveTypeIndex = (createObjectiveTypeIndex + OBJECTIVE_TYPES.length - 1) % OBJECTIVE_TYPES.length;
+                    rebuildButtons();
+                }
+        ).bounds(inputX - 25, typeButtonY, 20, BUTTON_HEIGHT)
+                .colors(LCARSRenderer.ORANGE, LCARSRenderer.LAVENDER)
+                .centerAligned()
+                .build());
+
+        // Type display button (shows current type)
+        addRenderableWidget(LCARSButton.lcarsBuilder(
+                Component.literal(OBJECTIVE_LABELS[createObjectiveTypeIndex]),
+                button -> {} // No action, just display
+        ).bounds(inputX, typeButtonY, inputWidth, BUTTON_HEIGHT)
+                .colors(LCARSRenderer.PEACH, LCARSRenderer.ORANGE)
+                .build());
+
+        // Right arrow button
+        addRenderableWidget(LCARSButton.lcarsBuilder(
+                Component.literal(">"),
+                button -> {
+                    createObjectiveTypeIndex = (createObjectiveTypeIndex + 1) % OBJECTIVE_TYPES.length;
+                    rebuildButtons();
+                }
+        ).bounds(inputX + inputWidth + 5, typeButtonY, 20, BUTTON_HEIGHT)
+                .colors(LCARSRenderer.ORANGE, LCARSRenderer.LAVENDER)
+                .centerAligned()
+                .build());
+
+        // Parameter input based on objective type
+        String currentType = OBJECTIVE_TYPES[createObjectiveTypeIndex].toLowerCase();
+        int paramY = typeButtonY + BUTTON_HEIGHT + BUTTON_SPACING + 25;
+
+        if (!currentType.equals("explore")) {
+            // Entity/Item ID input
+            net.minecraft.client.gui.components.EditBox param1Input = new net.minecraft.client.gui.components.EditBox(
+                    font, inputX, paramY, inputWidth, 18, Component.literal("Target"));
+            param1Input.setMaxLength(64);
+            param1Input.setValue(createParam1);
+            param1Input.setResponder(s -> createParam1 = s);
+            addRenderableWidget(param1Input);
+            paramY += 40;
+        }
+
+        // Count buttons (decrement / value display / increment)
+        int countButtonY = paramY;
+        int countDisplayWidth = 60;
+        int arrowWidth = 30;
+        int totalCountWidth = arrowWidth * 2 + countDisplayWidth;
+        int countStartX = inputX + (inputWidth - totalCountWidth) / 2;
+
+        // Decrement button
+        addRenderableWidget(LCARSButton.lcarsBuilder(
+                Component.literal("-"),
+                button -> {
+                    if (createParamCount > 1) {
+                        createParamCount = Math.max(1, createParamCount - (createParamCount >= 10 ? 5 : 1));
+                        rebuildButtons();
+                    }
+                }
+        ).bounds(countStartX, countButtonY, arrowWidth, BUTTON_HEIGHT)
+                .colors(LCARSRenderer.ORANGE, LCARSRenderer.LAVENDER)
+                .centerAligned()
+                .build());
+
+        // Count display
+        addRenderableWidget(LCARSButton.lcarsBuilder(
+                Component.literal(String.valueOf(createParamCount)),
+                button -> {} // No action
+        ).bounds(countStartX + arrowWidth, countButtonY, countDisplayWidth, BUTTON_HEIGHT)
+                .colors(LCARSRenderer.LAVENDER, LCARSRenderer.LAVENDER)
+                .centerAligned()
+                .build());
+
+        // Increment button
+        int maxCount = currentType.equals("explore") ? 10 : 100;
+        addRenderableWidget(LCARSButton.lcarsBuilder(
+                Component.literal("+"),
+                button -> {
+                    if (createParamCount < maxCount) {
+                        createParamCount = Math.min(maxCount, createParamCount + (createParamCount >= 10 ? 5 : 1));
+                        rebuildButtons();
+                    }
+                }
+        ).bounds(countStartX + arrowWidth + countDisplayWidth, countButtonY, arrowWidth, BUTTON_HEIGHT)
+                .colors(LCARSRenderer.ORANGE, LCARSRenderer.LAVENDER)
+                .centerAligned()
+                .build());
+
+        // Navigation
+        addBottomBarButton("< BACK", () -> {
+            currentState = MenuState.CREATE_MISSION_INFO;
+            rebuildButtons();
+        });
+
+        int nextX = contentX + (contentW - 65) / 2 + 40;
+        int[] bottomBarBounds = LCARSRenderer.getBottomBarBounds(panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT);
+        int buttonY = bottomBarBounds[1] + (bottomBarBounds[3] - 15) / 2 + 12;
+        addRenderableWidget(LCARSButton.lcarsBuilder(
+                Component.literal("NEXT >"),
+                button -> {
+                    currentState = MenuState.CREATE_MISSION_REWARDS;
+                    rebuildButtons();
+                }
+        ).bounds(nextX, buttonY, 65, 15)
+                .colors(LCARSRenderer.GREEN, LCARSRenderer.LAVENDER)
+                .centerAligned()
+                .build());
+    }
+
+    /**
+     * Step 3: XP reward and minimum rank.
+     */
+    private void buildCreateMissionRewards() {
+        int[] bounds = LCARSRenderer.getContentBounds(panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT);
+        int contentX = bounds[0], contentY = bounds[1], contentW = bounds[2];
+        int inputWidth = BUTTON_WIDTH;
+        int inputX = contentX + (contentW - inputWidth) / 2;
+        int y = contentY + BUTTON_Y_OFFSET;
+
+        // XP Reward buttons (decrement / value display / increment)
+        int xpButtonY = y + 15;
+        int xpDisplayWidth = 80;
+        int arrowWidth = 30;
+        int totalXpWidth = arrowWidth * 2 + xpDisplayWidth;
+        int xpStartX = inputX + (inputWidth - totalXpWidth) / 2;
+
+        // Decrement button
+        addRenderableWidget(LCARSButton.lcarsBuilder(
+                Component.literal("-"),
+                button -> {
+                    createXpReward = Math.max(10, createXpReward - (createXpReward > 100 ? 50 : 10));
+                    rebuildButtons();
+                }
+        ).bounds(xpStartX, xpButtonY, arrowWidth, BUTTON_HEIGHT)
+                .colors(LCARSRenderer.ORANGE, LCARSRenderer.LAVENDER)
+                .centerAligned()
+                .build());
+
+        // XP display
+        addRenderableWidget(LCARSButton.lcarsBuilder(
+                Component.literal(createXpReward + " XP"),
+                button -> {} // No action
+        ).bounds(xpStartX + arrowWidth, xpButtonY, xpDisplayWidth, BUTTON_HEIGHT)
+                .colors(LCARSRenderer.GREEN, LCARSRenderer.GREEN)
+                .centerAligned()
+                .build());
+
+        // Increment button
+        addRenderableWidget(LCARSButton.lcarsBuilder(
+                Component.literal("+"),
+                button -> {
+                    createXpReward = Math.min(500, createXpReward + (createXpReward >= 100 ? 50 : 10));
+                    rebuildButtons();
+                }
+        ).bounds(xpStartX + arrowWidth + xpDisplayWidth, xpButtonY, arrowWidth, BUTTON_HEIGHT)
+                .colors(LCARSRenderer.ORANGE, LCARSRenderer.LAVENDER)
+                .centerAligned()
+                .build());
+
+        // Minimum Rank selector
+        com.csquared.trekcraft.starfleet.StarfleetRank[] selectableRanks = {
+            com.csquared.trekcraft.starfleet.StarfleetRank.CREWMAN,
+            com.csquared.trekcraft.starfleet.StarfleetRank.ENSIGN,
+            com.csquared.trekcraft.starfleet.StarfleetRank.LIEUTENANT,
+            com.csquared.trekcraft.starfleet.StarfleetRank.COMMANDER,
+            com.csquared.trekcraft.starfleet.StarfleetRank.CAPTAIN
+        };
+
+        int rankButtonY = xpButtonY + BUTTON_HEIGHT + BUTTON_SPACING + 25;
+        int rankDisplayWidth = 100;
+        int totalRankWidth = arrowWidth * 2 + rankDisplayWidth;
+        int rankStartX = inputX + (inputWidth - totalRankWidth) / 2;
+
+        // Left arrow button
+        addRenderableWidget(LCARSButton.lcarsBuilder(
+                Component.literal("<"),
+                button -> {
+                    createMinRankIndex = (createMinRankIndex + selectableRanks.length - 1) % selectableRanks.length;
+                    rebuildButtons();
+                }
+        ).bounds(rankStartX, rankButtonY, arrowWidth, BUTTON_HEIGHT)
+                .colors(LCARSRenderer.ORANGE, LCARSRenderer.LAVENDER)
+                .centerAligned()
+                .build());
+
+        // Rank display
+        addRenderableWidget(LCARSButton.lcarsBuilder(
+                Component.literal(selectableRanks[createMinRankIndex].getTitle()),
+                button -> {} // No action
+        ).bounds(rankStartX + arrowWidth, rankButtonY, rankDisplayWidth, BUTTON_HEIGHT)
+                .colors(LCARSRenderer.BLUE, LCARSRenderer.BLUE)
+                .centerAligned()
+                .build());
+
+        // Right arrow button
+        addRenderableWidget(LCARSButton.lcarsBuilder(
+                Component.literal(">"),
+                button -> {
+                    createMinRankIndex = (createMinRankIndex + 1) % selectableRanks.length;
+                    rebuildButtons();
+                }
+        ).bounds(rankStartX + arrowWidth + rankDisplayWidth, rankButtonY, arrowWidth, BUTTON_HEIGHT)
+                .colors(LCARSRenderer.ORANGE, LCARSRenderer.LAVENDER)
+                .centerAligned()
+                .build());
+
+        // Navigation
+        addBottomBarButton("< BACK", () -> {
+            currentState = MenuState.CREATE_MISSION_CONFIG;
+            rebuildButtons();
+        });
+
+        int nextX = contentX + (contentW - 65) / 2 + 40;
+        int[] bottomBarBounds = LCARSRenderer.getBottomBarBounds(panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT);
+        int buttonY = bottomBarBounds[1] + (bottomBarBounds[3] - 15) / 2 + 12;
+        addRenderableWidget(LCARSButton.lcarsBuilder(
+                Component.literal("NEXT >"),
+                button -> {
+                    currentState = MenuState.CREATE_MISSION_CONFIRM;
+                    rebuildButtons();
+                }
+        ).bounds(nextX, buttonY, 65, 15)
+                .colors(LCARSRenderer.GREEN, LCARSRenderer.LAVENDER)
+                .centerAligned()
+                .build());
+    }
+
+    /**
+     * Step 4: Review and post mission.
+     */
+    private void buildCreateMissionConfirm() {
+        int[] bounds = LCARSRenderer.getContentBounds(panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT);
+        int contentX = bounds[0], contentY = bounds[1], contentW = bounds[2];
+        int buttonX = contentX + (contentW - BUTTON_WIDTH) / 2;
+
+        // POST MISSION button (slot 5 - bottom of content area)
+        int postY = contentY + BUTTON_Y_OFFSET + 5 * (BUTTON_HEIGHT + BUTTON_SPACING);
+        addRenderableWidget(LCARSButton.lcarsBuilder(
+                Component.literal("POST MISSION"),
+                button -> postMission()
+        ).bounds(buttonX, postY, BUTTON_WIDTH, BUTTON_HEIGHT)
+                .colors(LCARSRenderer.GREEN, LCARSRenderer.LAVENDER)
+                .build());
+
+        addBottomBarButton("< BACK", () -> {
+            currentState = MenuState.CREATE_MISSION_REWARDS;
+            rebuildButtons();
+        });
+    }
+
+    /**
+     * Post the mission to the server.
+     */
+    private void postMission() {
+        String type = OBJECTIVE_TYPES[createObjectiveTypeIndex].toLowerCase();
+        String data = switch (type) {
+            case "kill" -> createParam1 + "|" + createParamCount;
+            case "gather" -> createParam1 + "|" + createParamCount;
+            case "explore" -> String.valueOf(createParamCount);
+            case "scan" -> createParam1 + "||" + createParamCount;  // entities|blocks|count
+            default -> "";
+        };
+
+        com.csquared.trekcraft.starfleet.StarfleetRank[] selectableRanks = {
+            com.csquared.trekcraft.starfleet.StarfleetRank.CREWMAN,
+            com.csquared.trekcraft.starfleet.StarfleetRank.ENSIGN,
+            com.csquared.trekcraft.starfleet.StarfleetRank.LIEUTENANT,
+            com.csquared.trekcraft.starfleet.StarfleetRank.COMMANDER,
+            com.csquared.trekcraft.starfleet.StarfleetRank.CAPTAIN
+        };
+
+        net.neoforged.neoforge.network.PacketDistributor.sendToServer(
+                new com.csquared.trekcraft.network.mission.CreateMissionPayload(
+                        createTitle,
+                        createDescription,
+                        type,
+                        data,
+                        createXpReward,
+                        selectableRanks[createMinRankIndex].name()
+                )
+        );
+
+        // Return to Starfleet Command
+        currentState = MenuState.STARFLEET_COMMAND;
+        rebuildButtons();
+    }
+
     /**
      * Get the height of the scrollable text area (5 button slots).
      * BUTTON_SPACING provides the built-in 6px margin between slots.
@@ -803,11 +1210,12 @@ public class TricorderScreen extends Screen {
     /**
      * Update player's Starfleet record from server payload.
      */
-    public void updateStarfleetRecord(String rankTitle, long xp, int activeMissions, int completedMissions) {
+    public void updateStarfleetRecord(String rankTitle, long xp, int activeMissions, int completedMissions, boolean canCreateMissions) {
         this.playerRankTitle = rankTitle;
         this.playerXp = xp;
         this.activeMissionCount = activeMissions;
         this.completedMissionCount = completedMissions;
+        this.canCreateMissions = canCreateMissions;
     }
 
     /**
@@ -822,8 +1230,15 @@ public class TricorderScreen extends Screen {
         this.totalKills = payload.totalKills();
         this.totalScans = payload.totalScans();
         this.biomesExplored = payload.biomesExplored();
-        // Switch to service record view
-        currentState = MenuState.SERVICE_RECORD;
+        // Update canCreateMissions based on rank (Lieutenant+ can create missions)
+        String rank = payload.rankName().toUpperCase();
+        this.canCreateMissions = rank.equals("LIEUTENANT") || rank.equals("COMMANDER") ||
+                                  rank.equals("CAPTAIN") || rank.equals("ADMIRAL");
+        // Check if we should switch to service record view
+        if (pendingServiceRecordView) {
+            pendingServiceRecordView = false;
+            currentState = MenuState.SERVICE_RECORD;
+        }
         rebuildButtons();
     }
 
@@ -880,6 +1295,8 @@ public class TricorderScreen extends Screen {
             case MISSION_LOG -> "ACTIVE";
             case MISSION_INFO -> "DETAILS";
             case SERVICE_RECORD -> "RECORD";
+            case CREATE_MISSION_INFO, CREATE_MISSION_CONFIG, CREATE_MISSION_REWARDS -> "CREATE";
+            case CREATE_MISSION_CONFIRM -> "CONFIRM";
         };
         LCARSRenderer.drawLCARSFrame(guiGraphics, panelLeft, panelTop, PANEL_WIDTH, PANEL_HEIGHT, titleText, this.font);
     }
@@ -992,6 +1409,17 @@ public class TricorderScreen extends Screen {
         // Draw mission info content
         if (currentState == MenuState.MISSION_INFO) {
             renderMissionInfo(guiGraphics, contentX, contentY, contentW, contentH);
+        }
+
+        // Draw create mission labels and summary
+        if (currentState == MenuState.CREATE_MISSION_INFO) {
+            renderCreateMissionInfoLabels(guiGraphics, contentX, contentY);
+        } else if (currentState == MenuState.CREATE_MISSION_CONFIG) {
+            renderCreateMissionConfigLabels(guiGraphics, contentX, contentY);
+        } else if (currentState == MenuState.CREATE_MISSION_REWARDS) {
+            renderCreateMissionRewardsLabels(guiGraphics, contentX, contentY);
+        } else if (currentState == MenuState.CREATE_MISSION_CONFIRM) {
+            renderCreateMissionSummary(guiGraphics, contentX, contentY, contentW);
         }
     }
 
@@ -1232,6 +1660,104 @@ public class TricorderScreen extends Screen {
             lines.add(currentLine.toString());
         }
         return lines;
+    }
+
+    // ===== Create Mission Render Methods =====
+
+    /**
+     * Renders labels for the mission creation info screen (Step 1).
+     */
+    private void renderCreateMissionInfoLabels(GuiGraphics g, int x, int y) {
+        int labelY = y + BUTTON_Y_OFFSET;
+        g.drawString(font, "TITLE", x, labelY, LCARSRenderer.ORANGE);
+        g.drawString(font, "BRIEFING", x, labelY + 40, LCARSRenderer.ORANGE);
+    }
+
+    /**
+     * Renders labels for the mission creation config screen (Step 2).
+     */
+    private void renderCreateMissionConfigLabels(GuiGraphics g, int x, int y) {
+        int labelY = y + BUTTON_Y_OFFSET;
+        g.drawString(font, "OBJECTIVE TYPE", x, labelY, LCARSRenderer.ORANGE);
+
+        String type = OBJECTIVE_TYPES[createObjectiveTypeIndex].toLowerCase();
+        if (!type.equals("explore")) {
+            String label = switch (type) {
+                case "kill" -> "TARGET (blank = any hostile)";
+                case "gather" -> "ITEM ID (e.g. minecraft:iron_ore)";
+                case "scan" -> "ENTITY TYPES (comma-separated)";
+                default -> "PARAMETER";
+            };
+            g.drawString(font, label, x, labelY + BUTTON_HEIGHT + BUTTON_SPACING + 10, LCARSRenderer.ORANGE);
+        }
+
+        // Count label
+        int countLabelY = type.equals("explore") ?
+                labelY + BUTTON_HEIGHT + BUTTON_SPACING + 10 :
+                labelY + BUTTON_HEIGHT + BUTTON_SPACING + 55;
+        g.drawString(font, "COUNT", x, countLabelY, LCARSRenderer.ORANGE);
+    }
+
+    /**
+     * Renders labels for the mission creation rewards screen (Step 3).
+     */
+    private void renderCreateMissionRewardsLabels(GuiGraphics g, int x, int y) {
+        int labelY = y + BUTTON_Y_OFFSET;
+        g.drawString(font, "XP REWARD", x, labelY, LCARSRenderer.ORANGE);
+        g.drawString(font, "MINIMUM RANK", x, labelY + BUTTON_HEIGHT + BUTTON_SPACING + 10, LCARSRenderer.ORANGE);
+    }
+
+    /**
+     * Renders the mission summary on the confirm screen (Step 4).
+     */
+    private void renderCreateMissionSummary(GuiGraphics g, int x, int y, int w) {
+        int lineY = y + BUTTON_Y_OFFSET;
+        int lineHeight = 12;
+
+        g.drawString(font, "MISSION SUMMARY", x, lineY, LCARSRenderer.ORANGE);
+        lineY += lineHeight + 4;
+
+        g.drawString(font, "Title: " + createTitle, x, lineY, LCARSRenderer.PEACH);
+        lineY += lineHeight;
+
+        if (!createDescription.isEmpty()) {
+            // Word wrap description if needed
+            java.util.List<String> descLines = wrapText("Brief: " + createDescription, w - 10);
+            for (String line : descLines) {
+                g.drawString(font, line, x, lineY, LCARSRenderer.LAVENDER);
+                lineY += lineHeight;
+            }
+        }
+
+        g.drawString(font, "Type: " + OBJECTIVE_LABELS[createObjectiveTypeIndex], x, lineY, LCARSRenderer.PEACH);
+        lineY += lineHeight;
+
+        String currentType = OBJECTIVE_TYPES[createObjectiveTypeIndex].toLowerCase();
+        if (!currentType.equals("explore") && !createParam1.isEmpty()) {
+            String paramLabel = switch (currentType) {
+                case "kill" -> "Target: ";
+                case "gather" -> "Item: ";
+                case "scan" -> "Entities: ";
+                default -> "Param: ";
+            };
+            g.drawString(font, paramLabel + createParam1, x, lineY, LCARSRenderer.PEACH);
+            lineY += lineHeight;
+        }
+
+        g.drawString(font, "Count: " + createParamCount, x, lineY, LCARSRenderer.PEACH);
+        lineY += lineHeight;
+
+        g.drawString(font, "XP Reward: " + createXpReward, x, lineY, LCARSRenderer.GREEN);
+        lineY += lineHeight;
+
+        com.csquared.trekcraft.starfleet.StarfleetRank[] selectableRanks = {
+            com.csquared.trekcraft.starfleet.StarfleetRank.CREWMAN,
+            com.csquared.trekcraft.starfleet.StarfleetRank.ENSIGN,
+            com.csquared.trekcraft.starfleet.StarfleetRank.LIEUTENANT,
+            com.csquared.trekcraft.starfleet.StarfleetRank.COMMANDER,
+            com.csquared.trekcraft.starfleet.StarfleetRank.CAPTAIN
+        };
+        g.drawString(font, "Min Rank: " + selectableRanks[createMinRankIndex].getTitle(), x, lineY, LCARSRenderer.BLUE);
     }
 
     /**

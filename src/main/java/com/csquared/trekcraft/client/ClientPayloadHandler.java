@@ -42,7 +42,8 @@ public class ClientPayloadHandler {
                             payload.slips(),
                             payload.hasRoom(),
                             payload.pads(),
-                            payload.signals()
+                            payload.signals(),
+                            payload.canCreateMissions()
                     )
             );
         });
@@ -124,7 +125,8 @@ public class ClientPayloadHandler {
                         payload.rankName(),
                         payload.totalXp(),
                         payload.activeMissionCount(),
-                        payload.completedMissionCount()
+                        payload.completedMissionCount(),
+                        payload.getRank().canCreateMissions()
                 );
             }
         });

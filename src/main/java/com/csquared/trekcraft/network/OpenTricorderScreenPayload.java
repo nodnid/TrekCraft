@@ -17,7 +17,8 @@ public record OpenTricorderScreenPayload(
         int slips,
         boolean hasRoom,
         List<PadEntry> pads,
-        List<SignalEntry> signals
+        List<SignalEntry> signals,
+        boolean canCreateMissions
 ) implements CustomPacketPayload {
 
     public static final Type<OpenTricorderScreenPayload> TYPE = new Type<>(
@@ -30,6 +31,7 @@ public record OpenTricorderScreenPayload(
             ByteBufCodecs.BOOL, OpenTricorderScreenPayload::hasRoom,
             PadEntry.STREAM_CODEC.apply(ByteBufCodecs.list()), OpenTricorderScreenPayload::pads,
             SignalEntry.STREAM_CODEC.apply(ByteBufCodecs.list()), OpenTricorderScreenPayload::signals,
+            ByteBufCodecs.BOOL, OpenTricorderScreenPayload::canCreateMissions,
             OpenTricorderScreenPayload::new
     );
 

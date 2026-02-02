@@ -11,6 +11,7 @@ import com.csquared.trekcraft.network.OpenWormholeLinkScreenPayload;
 import com.csquared.trekcraft.registry.ModBlocks;
 import com.csquared.trekcraft.registry.ModDataComponents;
 import com.csquared.trekcraft.registry.ModItems;
+import com.csquared.trekcraft.service.StarfleetService;
 import com.csquared.trekcraft.service.WormholeService;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -203,8 +204,11 @@ public class TricorderItem extends Item {
                 ));
             }
 
+            // Check if player can create missions (Lieutenant+ rank)
+            boolean canCreateMissions = StarfleetService.getPlayerRank(serverPlayer).canCreateMissions();
+
             // Send packet to open tricorder screen on client
-            PacketDistributor.sendToPlayer(serverPlayer, new OpenTricorderScreenPayload(fuel, slips, hasRoom, pads, signals));
+            PacketDistributor.sendToPlayer(serverPlayer, new OpenTricorderScreenPayload(fuel, slips, hasRoom, pads, signals, canCreateMissions));
         }
 
         return InteractionResultHolder.sidedSuccess(stack, level.isClientSide);
